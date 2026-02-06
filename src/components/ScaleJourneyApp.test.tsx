@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ScaleJourneyApp } from './ScaleJourneyApp'
 import type { Entry } from '../types/pokemon'
@@ -61,12 +61,16 @@ describe('ScaleJourneyApp', () => {
     window.history.replaceState(null, '', '#alpha')
   })
 
-  it('renders intro gate and side-by-side scale stage', async () => {
+  it('renders intro gate and uses wheel navigation for side-by-side scaling', async () => {
     const user = userEvent.setup()
     render(<ScaleJourneyApp entries={testEntries} />)
 
     await user.click(screen.getByTestId('enter-button'))
-    await user.click(screen.getByTestId('next-button'))
+    fireEvent.wheel(window, { deltaY: 180 })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('current-entry-title')).toHaveTextContent('Beta')
+    })
 
     expect(screen.getByTestId('pokemon-figure-alpha')).toBeInTheDocument()
     expect(screen.getByTestId('pokemon-figure-beta')).toBeInTheDocument()
@@ -103,7 +107,10 @@ describe('ScaleJourneyApp', () => {
     render(<ScaleJourneyApp entries={testEntries} />)
 
     await user.click(screen.getByTestId('enter-button'))
-    await user.click(screen.getByTestId('next-button'))
+    fireEvent.wheel(window, { deltaY: 180 })
+    await waitFor(() => {
+      expect(screen.getByTestId('current-entry-title')).toHaveTextContent('Beta')
+    })
 
     const before = getHeightPx('beta')
     await user.click(screen.getByTestId('zoom-in'))
@@ -113,16 +120,18 @@ describe('ScaleJourneyApp', () => {
     })
   })
 
-  it('updates source link when active pokemon changes', async () => {
+  it('updates source link when active pokemon changes via wheel', async () => {
     const user = userEvent.setup()
     render(<ScaleJourneyApp entries={testEntries} />)
 
     await user.click(screen.getByTestId('enter-button'))
-    await user.click(screen.getByTestId('next-button'))
+    fireEvent.wheel(window, { deltaY: 180 })
 
-    expect(screen.getByTestId('source-link')).toHaveAttribute(
-      'href',
-      'https://www.pokemon.com/us/pokedex/beta',
-    )
+    await waitFor(() => {
+      expect(screen.getByTestId('source-link')).toHaveAttribute(
+        'href',
+        'https://www.pokemon.com/us/pokedex/beta',
+      )
+    })
   })
 })
