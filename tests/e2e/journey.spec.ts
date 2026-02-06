@@ -62,6 +62,16 @@ test('known mapped pokemon renders local 3d model canvas', async ({ page }) => {
   await expect(page.getByTestId('pokemon-model-pikachu')).toBeVisible()
 })
 
+test('music mute button toggles label', async ({ page }) => {
+  await page.goto('/')
+  await page.getByTestId('enter-button').click()
+
+  const muteButton = page.getByTestId('music-mute-button')
+  await expect(muteButton).toHaveText(/Mute Music/i)
+  await muteButton.click()
+  await expect(muteButton).toHaveText(/Unmute Music/i)
+})
+
 test('jump button opens picker and navigates to selected pokemon', async ({ page }) => {
   await page.goto('/')
   await page.getByTestId('enter-button').click()

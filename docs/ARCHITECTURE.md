@@ -74,6 +74,7 @@ The app renders a shared baseline scale viewport (no card-to-card layout):
 - The active Pokemon remains centered while neighboring entries are kept visible with extra horizontal spacing to avoid clustering.
 - If `assets.model3dUrl` exists and WebGL is available, the entry renders in an R3F canvas with local model loading.
 - If no local model exists (or WebGL is unavailable), the entry renders a high-resolution image fallback.
+- Local model paths are resolved against Vite `BASE_URL` so GitHub Pages project paths load correctly.
 
 ## URL Behavior
 - Initial hash is parsed on load to select the entry.
@@ -90,6 +91,8 @@ Both paths:
 - Uses a five-layer synth arrangement (lead, bass, chords, arpeggio, percussion).
 - Mixes layers via `getLayerMixForProgress(progress)` so early journey stages play one instrument and later stages add full instrumentation.
 - Slightly increases tempo across progress for stronger growth perception.
+- Includes an in-UI mute/unmute toggle wired to master gain.
+- Clicking a Pokemon plays the current entry's cry URL.
 
 No copyrighted audio files are embedded in the repository.
 

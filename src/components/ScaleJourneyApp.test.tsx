@@ -177,4 +177,55 @@ describe('ScaleJourneyApp', () => {
     })
     expect(screen.getByTestId('list-counter')).toHaveTextContent('2 of 3')
   })
+
+  it('toggles the music mute button label', async () => {
+    const user = userEvent.setup()
+    render(<ScaleJourneyApp entries={testEntries} />)
+
+    await user.click(screen.getByTestId('enter-button'))
+    const muteButton = screen.getByTestId('music-mute-button')
+    expect(muteButton).toHaveTextContent('Mute Music')
+
+    await user.click(muteButton)
+    expect(muteButton).toHaveTextContent('Unmute Music')
+  })
+
+  it('plays cry audio when a pokemon is clicked', async () => {
+    const user = userEvent.setup()
+    const playSpy = vi.fn().mockResolvedValue(undefined)
+    const pauseSpy = vi.fn()
+    class AudioMockClass {
+      public src = ''
+      public currentTime = 0
+      public volume = 1
+      public preload = 'none'
+
+      public play = playSpy
+
+      public pause = pauseSpy
+    }
+    const AudioMock = vi.fn(AudioMockClass)
+    const previousAudio = window.Audio
+    Object.defineProperty(window, 'Audio', {
+      configurable: true,
+      writable: true,
+      value: AudioMock,
+    })
+
+    try {
+      render(<ScaleJourneyApp entries={testEntries} />)
+      await user.click(screen.getByTestId('enter-button'))
+      await user.click(screen.getByTestId('pokemon-figure-alpha'))
+
+      expect(AudioMock).toHaveBeenCalledTimes(1)
+      expect(pauseSpy).toHaveBeenCalled()
+      expect(playSpy).toHaveBeenCalled()
+    } finally {
+      Object.defineProperty(window, 'Audio', {
+        configurable: true,
+        writable: true,
+        value: previousAudio,
+      })
+    }
+  })
 })

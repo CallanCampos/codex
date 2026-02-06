@@ -44,6 +44,7 @@ const EXTRA_INDEX_GAP_PX = 86
 const EDGE_FRAME_MARGIN_PX = 26
 const ADJACENT_MIN_VISIBLE_FRACTION = 0.16
 const MAX_RENDER_DISTANCE = 2
+const DEFAULT_MUSIC_VOLUME = 0.22
 
 const LazyPokemonModelCanvas = lazy(async () => {
   const module = await import('./PokemonModelCanvas')
@@ -130,12 +131,15 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
   const [hasEntered, setHasEntered] = useState(false)
   const [activeIndex, setActiveIndex] = useState(() => readInitialIndex(entries))
   const [isJumpMenuOpen, setIsJumpMenuOpen] = useState(false)
+  const [isMusicMuted, setIsMusicMuted] = useState(false)
   const [stageSize, setStageSize] = useState({ height: 640, width: 1280 })
 
   const stageRef = useRef<HTMLDivElement | null>(null)
   const wheelAccumulatorRef = useRef(0)
+  const cryAudioRef = useRef<HTMLAudioElement | null>(null)
 
-  const { resume, isSupported: isAudioSupported, setProgress } = useWebAudioScaffold()
+  const { resume, isSupported: isAudioSupported, setMasterVolume, setProgress } =
+    useWebAudioScaffold()
 
   const safeActiveIndex = clampIndex(activeIndex, entries.length)
   const activeEntry = entries[safeActiveIndex]
@@ -263,6 +267,35 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
     [entries, setActive],
   )
 
+  const playCry = useCallback((cryUrl: string) => {
+    if (!cryUrl || typeof window === 'undefined') {
+      return
+    }
+
+    let audio = cryAudioRef.current
+    if (!audio) {
+      audio = new Audio()
+      audio.preload = 'auto'
+      cryAudioRef.current = audio
+    }
+
+    audio.pause()
+    audio.currentTime = 0
+    audio.src = cryUrl
+    audio.volume = 0.86
+    void audio.play().catch(() => {
+      // Ignore playback failures from browser policy/network constraints.
+    })
+  }, [])
+
+  const toggleMusicMute = useCallback(() => {
+    setIsMusicMuted((current) => {
+      const nextMuted = !current
+      setMasterVolume(nextMuted ? 0 : DEFAULT_MUSIC_VOLUME)
+      return nextMuted
+    })
+  }, [setMasterVolume])
+
   useEffect(() => {
     const previousBodyOverflow = document.body.style.overflow
     const previousHtmlOverflow = document.documentElement.style.overflow
@@ -389,6 +422,17 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
     return () => observer.disconnect()
   }, [])
 
+  useEffect(() => {
+    return () => {
+      const audio = cryAudioRef.current
+      if (audio) {
+        audio.pause()
+        audio.src = ''
+      }
+      cryAudioRef.current = null
+    }
+  }, [])
+
   if (!activeEntry) {
     return (
       <main className="flex h-screen w-screen items-center justify-center overflow-hidden text-white">
@@ -430,6 +474,7 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
                 setHasEntered(true)
                 if (isAudioSupported) {
                   await resume()
+                  setMasterVolume(isMusicMuted ? 0 : DEFAULT_MUSIC_VOLUME)
                 }
               }}
               type="button"
@@ -451,11 +496,21 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
           </div>
 
           <div className="ml-auto min-w-[200px]">
-            <div className="mb-1 flex justify-between text-xs text-slate-200/80">
+            <div className="mb-1 flex items-center justify-between gap-3 text-xs text-slate-200/80">
               <span data-testid="list-counter">
                 {activeListPosition} of {entries.length}
               </span>
-              <span>{progress.toFixed(1)}%</span>
+              <div className="flex items-center gap-2">
+                <span>{progress.toFixed(1)}%</span>
+                <button
+                  className="rounded-full border border-cyan-200/45 bg-slate-900/70 px-2 py-0.5 text-[11px] text-cyan-100 hover:bg-cyan-300/20"
+                  data-testid="music-mute-button"
+                  onClick={toggleMusicMute}
+                  type="button"
+                >
+                  {isMusicMuted ? 'Unmute Music' : 'Mute Music'}
+                </button>
+              </div>
             </div>
             <div className="h-2 rounded-full bg-white/20">
               <motion.div
@@ -561,16 +616,19 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
                 <motion.div
                   key={entry.id}
                   animate={{ opacity, scale, x, y: 0 }}
-                  className="pointer-events-none absolute left-1/2"
+                  className="absolute left-1/2"
                   exit={{ opacity: 0, y: 10 }}
                   initial={{ opacity: 0, y: 10 }}
                   style={{ bottom: `${baselineOffsetPx}px` }}
                   transition={{ damping: 28, mass: 0.75, stiffness: 210, type: 'spring' }}
                 >
                   <figure
-                    className="-translate-x-1/2 flex flex-col items-center"
+                    className="-translate-x-1/2 flex cursor-pointer flex-col items-center"
                     data-active={isActive ? 'true' : 'false'}
                     data-testid={`pokemon-figure-${entry.id}`}
+                    onClick={() => {
+                      playCry(entry.assets.cryUrl)
+                    }}
                   >
                     {renderModel ? (
                       <motion.div

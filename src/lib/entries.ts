@@ -1,4 +1,5 @@
 import { getBackgroundBlend } from './background'
+import { resolveAssetUrl } from './assetUrl'
 import type { Entry, PokemonDatasetEntry } from '../types/pokemon'
 
 export const mapPokemonToEntries = (
@@ -29,7 +30,7 @@ export const mapPokemonToEntries = (
         imageUrl: pokemon.model,
         cryUrl: pokemon.cry,
         modelPlaceholder: pokemon.model,
-        model3dUrl: model3dMap[pokemon.slug],
+        model3dUrl: resolveAssetUrl(model3dMap[pokemon.slug]),
       },
     }
   })

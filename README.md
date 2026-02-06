@@ -22,6 +22,8 @@
 - Pokemon dataset pipeline from PokeAPI plus local model extraction from `models.spriters-resource.com/3ds/pokemonxy`
 - Automatic fallback to front-facing art when a local 3D model is unavailable
 - Layered background music that adds instruments as you progress
+- Click any visible Pokemon to play its cry
+- In-app music mute/unmute control
 
 ## Getting Started
 Node.js `20.19+` is recommended (Vite 7 requirement).
