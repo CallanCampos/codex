@@ -6,7 +6,7 @@ import type { Entry } from '../types/pokemon'
 const testEntries: Entry[] = [
   {
     id: 'alpha',
-    dexNumber: 1,
+    dexNumber: 25,
     name: 'Alpha',
     heightMeters: 0.2,
     weightKg: 2,
@@ -21,7 +21,7 @@ const testEntries: Entry[] = [
   },
   {
     id: 'beta',
-    dexNumber: 2,
+    dexNumber: 493,
     name: 'Beta',
     heightMeters: 1.2,
     weightKg: 8,
@@ -36,7 +36,7 @@ const testEntries: Entry[] = [
   },
   {
     id: 'gamma',
-    dexNumber: 3,
+    dexNumber: 7,
     name: 'Gamma',
     heightMeters: 5,
     weightKg: 30,
@@ -76,6 +76,7 @@ describe('ScaleJourneyApp', () => {
     expect(activeFigures).toHaveLength(1)
     expect(screen.getByTestId('pokemon-figure-alpha')).toBeInTheDocument()
     expect(screen.getByTestId('pokemon-figure-beta')).toBeInTheDocument()
+    expect(screen.getByTestId('pokemon-figure-gamma')).toBeInTheDocument()
     expect(getHeightPx('beta')).toBeGreaterThan(getHeightPx('alpha'))
   })
 
@@ -98,28 +99,19 @@ describe('ScaleJourneyApp', () => {
     })
   })
 
-  it('orders jump list by dataset order and can jump by name', async () => {
+  it('jumps by prompt from the compact jump button', async () => {
     const user = userEvent.setup()
     render(<ScaleJourneyApp entries={testEntries} />)
 
     await user.click(screen.getByTestId('enter-button'))
-
-    const options = screen
-      .getByTestId('jump-datalist')
-      .querySelectorAll('option')
-    expect(Array.from(options).map((option) => option.getAttribute('value'))).toEqual([
-      'Alpha',
-      'Beta',
-      'Gamma',
-    ])
-
-    await user.type(screen.getByTestId('jump-input'), 'Gamma')
-    await user.click(screen.getByTestId('jump-button'))
+    const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('Gamma')
+    await user.click(screen.getByTestId('jump-fab'))
 
     await waitFor(() => {
       expect(screen.getByTestId('current-entry-title')).toHaveTextContent('Gamma')
     })
     expect(window.location.hash).toBe('#gamma')
+    promptSpy.mockRestore()
   })
 
   it('uses keyboard navigation and keeps baseline labels below the line', async () => {
@@ -163,5 +155,19 @@ describe('ScaleJourneyApp', () => {
 
     const gammaActiveHeight = getHeightPx('gamma')
     expect(gammaActiveHeight).toBeGreaterThan(alphaActiveHeight)
+  })
+
+  it('uses list position counter instead of dex number', async () => {
+    const user = userEvent.setup()
+    render(<ScaleJourneyApp entries={testEntries} />)
+
+    await user.click(screen.getByTestId('enter-button'))
+    expect(screen.getByTestId('list-counter')).toHaveTextContent('1 of 3')
+
+    fireEvent.wheel(window, { deltaY: -220 })
+    await waitFor(() => {
+      expect(screen.getByTestId('current-entry-title')).toHaveTextContent('Beta')
+    })
+    expect(screen.getByTestId('list-counter')).toHaveTextContent('2 of 3')
   })
 })

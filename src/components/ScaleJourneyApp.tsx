@@ -19,8 +19,8 @@ interface ScaleJourneyAppProps {
 const VISIBLE_WINDOW = 1
 const MIN_ACTIVE_HEIGHT_RATIO = 0.48
 const MAX_ACTIVE_HEIGHT_RATIO = 0.78
-const BASELINE_MIN_OFFSET_PX = 108
-const BASELINE_MAX_OFFSET_PX = 162
+const BASELINE_MIN_OFFSET_PX = 94
+const BASELINE_MAX_OFFSET_PX = 126
 const WHEEL_STEP_THRESHOLD = 140
 
 const getSlugFromHash = (): string => {
@@ -71,7 +71,6 @@ const isFormControl = (target: EventTarget | null): boolean => {
 export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
   const [hasEntered, setHasEntered] = useState(false)
   const [activeIndex, setActiveIndex] = useState(() => readInitialIndex(entries))
-  const [jumpQuery, setJumpQuery] = useState('')
   const [stageSize, setStageSize] = useState({ height: 640, width: 1280 })
 
   const stageRef = useRef<HTMLDivElement | null>(null)
@@ -108,17 +107,32 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
     [entries.length],
   )
 
-  const jumpToQuery = useCallback(() => {
-    const match = findEntryByQuery(entries, jumpQuery)
-    if (!match) {
+  const jumpToQuery = useCallback(
+    (query: string) => {
+      const match = findEntryByQuery(entries, query)
+      if (!match) {
+        return false
+      }
+
+      const index = findEntryIndexBySlug(entries, match.id)
+      if (index >= 0) {
+        setActive(index)
+        return true
+      }
+
+      return false
+    },
+    [entries, setActive],
+  )
+
+  const onJumpClick = useCallback(() => {
+    const query = window.prompt('Jump to Pokemon by name or slug:')
+    if (!query) {
       return
     }
 
-    const index = findEntryIndexBySlug(entries, match.id)
-    if (index >= 0) {
-      setActive(index)
-    }
-  }, [entries, jumpQuery, setActive])
+    jumpToQuery(query)
+  }, [jumpToQuery])
 
   useEffect(() => {
     const previousBodyOverflow = document.body.style.overflow
@@ -262,12 +276,10 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
   const perspectivePx = Math.round(clamp(1700 - scaleEase * 900, 760, 1700))
   const targetActiveHeightPx = stageSize.height * activeHeightRatio
   const pixelsPerMeter = targetActiveHeightPx / Math.max(activeEntry.heightMeters, 0.01)
-  const slotWidthPx = clamp(stageSize.width * (0.62 + scaleEase * 0.6), 460, 1520)
-  const focusInfoBottom = clamp(
-    baselineOffsetPx + targetActiveHeightPx + 24,
-    185,
-    stageSize.height - 128,
-  )
+  const slotWidthPx = clamp(stageSize.width * (0.33 + scaleEase * 0.12), 160, 480)
+  const focusBottomMax = Math.max(205, stageSize.height - 268)
+  const focusInfoBottom = clamp(baselineOffsetPx + targetActiveHeightPx + 24, 170, focusBottomMax)
+  const activeListPosition = safeActiveIndex + 1
 
   return (
     <main className="relative h-screen w-screen overflow-hidden text-slate-100">
@@ -315,40 +327,10 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
             <p className="text-sm text-slate-300">{formatHeightDualUnits(activeEntry.heightMeters)}</p>
           </div>
 
-          <div className="flex min-w-[260px] flex-1 items-center gap-2">
-            <input
-              className="w-full rounded-full border border-white/20 bg-slate-950/65 px-4 py-2 text-sm"
-              data-testid="jump-input"
-              list="pokemon-jump-list"
-              onChange={(event) => setJumpQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  event.preventDefault()
-                  jumpToQuery()
-                }
-              }}
-              placeholder="Jump to any Pokemon (name or slug)..."
-              value={jumpQuery}
-            />
-            <datalist data-testid="jump-datalist" id="pokemon-jump-list">
-              {entries.map((entry) => (
-                <option key={entry.id} value={entry.name} />
-              ))}
-            </datalist>
-            <button
-              className="rounded-full border border-cyan-200/45 px-4 py-2 text-sm text-cyan-100 hover:bg-cyan-300/20"
-              data-testid="jump-button"
-              onClick={jumpToQuery}
-              type="button"
-            >
-              Jump
-            </button>
-          </div>
-
-          <div className="min-w-[200px]">
+          <div className="ml-auto min-w-[200px]">
             <div className="mb-1 flex justify-between text-xs text-slate-200/80">
-              <span>
-                #{activeEntry.dexNumber} of {entries.length}
+              <span data-testid="list-counter">
+                {activeListPosition} of {entries.length}
               </span>
               <span>{progress.toFixed(1)}%</span>
             </div>
@@ -362,6 +344,15 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
           </div>
         </div>
       </div>
+
+      <button
+        className="absolute bottom-5 right-5 z-40 rounded-full border border-cyan-200/40 bg-slate-950/75 px-3 py-1.5 text-xs text-cyan-100 shadow-lg backdrop-blur hover:bg-cyan-300/20"
+        data-testid="jump-fab"
+        onClick={onJumpClick}
+        type="button"
+      >
+        Jump
+      </button>
 
       <div className="absolute inset-0 overflow-hidden" ref={stageRef}>
         <motion.div
@@ -416,7 +407,7 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
               const absoluteDistance = Math.abs(distance)
               const x = distance * slotWidthPx
               const heightPx = Math.max(1, entry.heightMeters * pixelsPerMeter)
-              const opacity = index === safeActiveIndex ? 1 : clamp(0.54 - absoluteDistance * 0.18, 0.1, 0.6)
+              const opacity = index === safeActiveIndex ? 1 : clamp(0.64 - absoluteDistance * 0.15, 0.16, 0.72)
               const isActive = index === safeActiveIndex
               const scale = isActive ? 1 : clamp(0.88 - absoluteDistance * 0.11, 0.58, 0.88)
               const y = isActive ? 0 : 12 + absoluteDistance * 10

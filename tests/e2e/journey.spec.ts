@@ -6,10 +6,12 @@ test('active pokemon stays centered and wheel progresses smoothly', async ({ pag
 
   const title = page.getByTestId('current-entry-title')
   const firstTitle = (await title.textContent()) ?? ''
+  await expect(page.getByTestId('list-counter')).toContainText('1 of')
 
   await page.mouse.wheel(0, -260)
   await expect(title).not.toHaveText(firstTitle)
   await expect(page).toHaveURL(/#.+/)
+  await expect(page.getByTestId('list-counter')).toContainText('2 of')
 
   const activeSlug = await page.evaluate(() => {
     return window.location.hash.replace(/^#/, '')
@@ -35,6 +37,7 @@ test('active pokemon stays centered and wheel progresses smoothly', async ({ pag
       })
     })
     .toBeLessThan(20)
+  await expect(page.locator('[data-testid^="pokemon-figure-"]')).toHaveCount(3)
 })
 
 test('deep-link hash opens requested pokemon with description and source', async ({ page }) => {
@@ -50,18 +53,19 @@ test('deep-link hash opens requested pokemon with description and source', async
   )
 })
 
-test('jump input uses height-ordered dataset and navigates to target', async ({ page }) => {
+test('jump button prompt navigates to the requested pokemon', async ({ page }) => {
   await page.goto('/')
   await page.getByTestId('enter-button').click()
 
-  const firstOption = page.locator('#pokemon-jump-list option').first()
-  await expect(firstOption).toHaveAttribute('value', /.+/)
+  page.once('dialog', async (dialog) => {
+    expect(dialog.type()).toBe('prompt')
+    await dialog.accept('Charizard')
+  })
 
-  await page.getByTestId('jump-input').fill('Eternatus')
-  await page.getByTestId('jump-button').click()
+  await page.getByTestId('jump-fab').click()
 
-  await expect(page.getByTestId('current-entry-title')).toHaveText(/Eternatus/i)
-  await expect(page).toHaveURL(/#eternatus/i)
+  await expect(page.getByTestId('current-entry-title')).toHaveText(/Charizard/i)
+  await expect(page).toHaveURL(/#charizard/i)
 })
 
 test('viewport remains full-screen without page scrollbars', async ({ page }) => {
