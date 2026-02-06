@@ -9,7 +9,7 @@ This project emulates the `neal.fun/size-of-life` interaction model with a Pokem
 - Dynamic background blending based on Pokemon height.
 
 ## Data Pipeline
-Data is generated from PokeAPI into `src/data/pokemon.sorted.json`, with model URLs sourced from ProjectPokemon 3D-model docs pages.
+Data is generated from PokeAPI into `src/data/pokemon.sorted.json`, with model URLs sourced from ProjectPokemon's front-facing HOME model render set.
 
 ### Schema
 `data/pokemon.schema.json` defines required fields:
@@ -32,10 +32,7 @@ Data is generated from PokeAPI into `src/data/pokemon.sorted.json`, with model U
    - `heightMeters = height / 10`
    - `weightKg = weight / 10`
    - `description` from cleaned English flavor text.
-   - `model` resolved from ProjectPokemon 3D model GIF directories:
-     - `https://projectpokemon.org/images/sprites-models/normal-back/{slug}.gif`
-     - `https://projectpokemon.org/images/sprites-models/swsh-normal-sprites/{slug}.gif`
-   - unresolved species are assigned a fallback marker URL (`?fallback=1`)
+   - `model = https://projectpokemon.org/images/sprites-models/sv-sprites-home/{dex4}.png`
 5. Sort by `heightMeters` ascending, then `dexNumber` ascending.
 6. Write `src/data/pokemon.sorted.json`.
 
@@ -61,11 +58,9 @@ Layers:
 
 ## Rendering Model
 The app renders a shared baseline scale viewport (no card-to-card layout):
-- A visible window of Pokemon up to the active index is rendered side-by-side.
-- All sprites use the same `pixelsPerMeter * effectiveZoom` transform, so relative height is accurate.
-- `effectiveZoom = autoZoom(tallestVisible, viewportHeight) * manualZoom`.
-- As the active Pokemon gets taller, `autoZoom` decreases to create a smooth zoom-out journey.
-- Users can override with manual zoom in/out controls.
+- A visible window of Pokemon around the active index is rendered side-by-side.
+- Each Pokemon's rendered pixel height is `heightMeters * pixelsPerMeter`, so relative scale follows dataset heights.
+- The active Pokemon remains centered while neighboring entries are kept visible with extra horizontal spacing to avoid clustering.
 
 ## URL Behavior
 - Initial hash is parsed on load to select the entry.

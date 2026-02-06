@@ -19,8 +19,9 @@ const ACTIVE_HEIGHT_RATIO = 0.58
 const BASELINE_OFFSET_PX = 112
 const WHEEL_STEP_THRESHOLD = 140
 const ENTRY_WIDTH_FACTOR = 0.38
-const MIN_GAP_METERS = 0.18
-const MAX_GAP_METERS = 12
+const MIN_GAP_METERS = 0.36
+const MAX_GAP_METERS = 24
+const EXTRA_INDEX_GAP_PX = 54
 const EDGE_FRAME_MARGIN_PX = 26
 const ADJACENT_MIN_VISIBLE_FRACTION = 0.2
 const MAX_RENDER_DISTANCE = 2
@@ -87,7 +88,7 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
       const averageHeight = (previous.heightMeters + current.heightMeters) * 0.5
       const heightDelta = Math.abs(current.heightMeters - previous.heightMeters)
       const gapMeters = clamp(
-        averageHeight * 0.16 + heightDelta * 0.55 + 0.18,
+        averageHeight * 0.22 + heightDelta * 0.68 + 0.24,
         MIN_GAP_METERS,
         MAX_GAP_METERS,
       )
@@ -126,7 +127,8 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
     return entries
       .map((entry, index) => {
         const worldX = worldCenters[index] ?? 0
-        const x = (worldX - activeWorldX) * pixelsPerMeter
+        const indexOffset = index - safeActiveIndex
+        const x = (worldX - activeWorldX) * pixelsPerMeter + indexOffset * EXTRA_INDEX_GAP_PX
         const heightPx = Math.max(1, entry.heightMeters * pixelsPerMeter)
         const widthPx = Math.max(8, heightPx * ENTRY_WIDTH_FACTOR)
         const distancePx = Math.abs(x)
@@ -497,7 +499,7 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
                     <motion.img
                       alt={entry.name}
                       animate={{ height: heightPx }}
-                      className={`w-auto max-w-[22vw] object-contain drop-shadow-[0_12px_20px_rgba(0,0,0,0.45)] ${
+                      className={`w-auto max-w-none object-contain drop-shadow-[0_12px_20px_rgba(0,0,0,0.45)] ${
                         isActive ? 'brightness-110' : 'brightness-90'
                       }`}
                       data-height-px={heightPx.toFixed(2)}

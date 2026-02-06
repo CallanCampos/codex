@@ -19,7 +19,7 @@
 - Jump-to-any-Pokemon search from anywhere in the journey
 - Hash deep links (`/#pikachu`)
 - Dynamic background blending by log(height)
-- Pokemon dataset pipeline from PokeAPI with Project Pokemon 3D model GIF URLs
+- Pokemon dataset pipeline from PokeAPI with Project Pokemon front-facing HOME model renders
 - Layered background music that adds instruments as you progress
 
 ## Getting Started
@@ -59,8 +59,7 @@ pnpm dev
 ## Data Notes
 - Species count is fetched dynamically from PokeAPI at build time.
 - As of February 6, 2026, PokeAPI `pokemon-species` reports 1025 species.
-- Model images are sourced from Project Pokemon 3D model pages (`normal-back/*.gif` and `swsh-normal-sprites/*.gif`).
-- If a species does not have a listed 3D model asset, the build marks a fallback model URL and the representative selector skips that unresolved height entry.
+- Model images are sourced from Project Pokemon `sv-sprites-home/{dex}.png` assets (front-facing HOME model renders).
 - Output is sorted from smallest to largest by `heightMeters`.
 
 ## Audio Stems (Optional)
