@@ -80,6 +80,18 @@ describe('ScaleJourneyApp', () => {
     expect(getHeightPx('beta')).toBeGreaterThan(getHeightPx('alpha'))
   })
 
+  it('moves on a single small wheel input', async () => {
+    const user = userEvent.setup()
+    render(<ScaleJourneyApp entries={testEntries} />)
+
+    await user.click(screen.getByTestId('enter-button'))
+    fireEvent.wheel(window, { deltaY: -1 })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('current-entry-title')).toHaveTextContent('Beta')
+    })
+  })
+
   it('shows active description panel and source link', async () => {
     const user = userEvent.setup()
     render(<ScaleJourneyApp entries={testEntries} />)
@@ -152,6 +164,10 @@ describe('ScaleJourneyApp', () => {
     fireEvent.wheel(window, { deltaY: -220 })
     await waitFor(() => {
       expect(screen.getByTestId('current-entry-title')).toHaveTextContent('Beta')
+    })
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 220)
     })
 
     fireEvent.wheel(window, { deltaY: -220 })

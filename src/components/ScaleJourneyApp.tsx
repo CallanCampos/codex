@@ -36,7 +36,7 @@ interface ModelFallbackBoundaryState {
 
 const ACTIVE_HEIGHT_RATIO = 0.58
 const BASELINE_OFFSET_PX = 112
-const WHEEL_STEP_THRESHOLD = 140
+const WHEEL_NAV_LOCK_MS = 180
 const ENTRY_WIDTH_FACTOR = 0.5
 const MIN_GAP_METERS = 0.46
 const MAX_GAP_METERS = 24
@@ -135,7 +135,7 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
   const [stageSize, setStageSize] = useState({ height: 640, width: 1280 })
 
   const stageRef = useRef<HTMLDivElement | null>(null)
-  const wheelAccumulatorRef = useRef(0)
+  const lastWheelNavigateAtRef = useRef(0)
   const cryAudioRef = useRef<HTMLAudioElement | null>(null)
 
   const { resume, isSupported: isAudioSupported, setMasterVolume, setProgress } =
@@ -364,15 +364,18 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
       }
 
       event.preventDefault()
-      wheelAccumulatorRef.current += -event.deltaY
-
-      const steps = Math.trunc(wheelAccumulatorRef.current / WHEEL_STEP_THRESHOLD)
-      if (steps === 0) {
+      if (event.deltaY === 0) {
         return
       }
 
-      setActiveIndex((current) => clampIndex(current + steps, entries.length))
-      wheelAccumulatorRef.current -= steps * WHEEL_STEP_THRESHOLD
+      const now = performance.now()
+      if (now - lastWheelNavigateAtRef.current < WHEEL_NAV_LOCK_MS) {
+        return
+      }
+
+      const direction = event.deltaY < 0 ? 1 : -1
+      setActiveIndex((current) => clampIndex(current + direction, entries.length))
+      lastWheelNavigateAtRef.current = now
     }
 
     window.addEventListener('wheel', onWheel, { passive: false })
