@@ -16,6 +16,7 @@ playwright-report
 test-results
 app
 __neal_size_of_life.html
+public/models/xy/
 
 # Editor directories and files
 .vscode/*

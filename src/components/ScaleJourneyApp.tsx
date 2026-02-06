@@ -1,5 +1,15 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Component,
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
 import {
   clampIndex,
   findEntryIndexBySlug,
@@ -15,16 +25,53 @@ interface ScaleJourneyAppProps {
   entries: Entry[]
 }
 
+interface ModelFallbackBoundaryProps {
+  children: ReactNode
+  fallback: ReactNode
+}
+
+interface ModelFallbackBoundaryState {
+  hasError: boolean
+}
+
 const ACTIVE_HEIGHT_RATIO = 0.58
 const BASELINE_OFFSET_PX = 112
 const WHEEL_STEP_THRESHOLD = 140
-const ENTRY_WIDTH_FACTOR = 0.38
-const MIN_GAP_METERS = 0.36
+const ENTRY_WIDTH_FACTOR = 0.5
+const MIN_GAP_METERS = 0.46
 const MAX_GAP_METERS = 24
-const EXTRA_INDEX_GAP_PX = 54
+const EXTRA_INDEX_GAP_PX = 86
 const EDGE_FRAME_MARGIN_PX = 26
-const ADJACENT_MIN_VISIBLE_FRACTION = 0.2
+const ADJACENT_MIN_VISIBLE_FRACTION = 0.16
 const MAX_RENDER_DISTANCE = 2
+
+const LazyPokemonModelCanvas = lazy(async () => {
+  const module = await import('./PokemonModelCanvas')
+  return { default: module.PokemonModelCanvas }
+})
+
+class ModelFallbackBoundary extends Component<
+  ModelFallbackBoundaryProps,
+  ModelFallbackBoundaryState
+> {
+  public state: ModelFallbackBoundaryState = {
+    hasError: false,
+  }
+
+  public static getDerivedStateFromError(): ModelFallbackBoundaryState {
+    return {
+      hasError: true,
+    }
+  }
+
+  public override render() {
+    if (this.state.hasError) {
+      return this.props.fallback
+    }
+
+    return this.props.children
+  }
+}
 
 const getSlugFromHash = (): string => {
   const hash = window.location.hash.replace(/^#/, '')
@@ -54,6 +101,31 @@ const isFormControl = (target: EventTarget | null): boolean => {
   return tag === 'input' || tag === 'textarea' || tag === 'select'
 }
 
+const canUseWebGl = (): boolean => {
+  if (typeof window === 'undefined') {
+    return false
+  }
+
+  if (typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent)) {
+    return false
+  }
+
+  if (typeof HTMLCanvasElement === 'undefined') {
+    return false
+  }
+
+  if (typeof HTMLCanvasElement.prototype.getContext !== 'function') {
+    return false
+  }
+
+  try {
+    const canvas = document.createElement('canvas')
+    return Boolean(canvas.getContext('webgl2') || canvas.getContext('webgl'))
+  } catch {
+    return false
+  }
+}
+
 export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
   const [hasEntered, setHasEntered] = useState(false)
   const [activeIndex, setActiveIndex] = useState(() => readInitialIndex(entries))
@@ -67,6 +139,7 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
 
   const safeActiveIndex = clampIndex(activeIndex, entries.length)
   const activeEntry = entries[safeActiveIndex]
+  const canRender3dModels = useMemo(() => canUseWebGl(), [])
 
   const minHeight = entries[0]?.heightMeters ?? 0.01
   const maxHeight = entries[entries.length - 1]?.heightMeters ?? 1
@@ -147,6 +220,7 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
           isAdjacent,
           isNearby,
           heightPx,
+          widthPx,
           x,
           opacity,
           scale,
@@ -479,7 +553,9 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
           transition={{ duration: 0.45, ease: 'easeOut' }}
         >
           <AnimatePresence initial={false}>
-            {renderedEntries.map(({ entry, isActive, x, heightPx, opacity, scale }) => {
+            {renderedEntries.map(({ entry, isActive, x, heightPx, opacity, scale, widthPx }) => {
+              const renderModel = canRender3dModels && Boolean(entry.assets.model3dUrl)
+              const modelWidthPx = Math.max(widthPx * 1.55, heightPx * 0.72, 84)
 
               return (
                 <motion.div
@@ -496,17 +572,52 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
                     data-active={isActive ? 'true' : 'false'}
                     data-testid={`pokemon-figure-${entry.id}`}
                   >
-                    <motion.img
-                      alt={entry.name}
-                      animate={{ height: heightPx }}
-                      className={`w-auto max-w-none object-contain drop-shadow-[0_12px_20px_rgba(0,0,0,0.45)] ${
-                        isActive ? 'brightness-110' : 'brightness-90'
-                      }`}
-                      data-height-px={heightPx.toFixed(2)}
-                      loading={isActive ? 'eager' : 'lazy'}
-                      src={entry.assets.imageUrl}
-                      transition={{ duration: 0.48, ease: 'easeOut' }}
-                    />
+                    {renderModel ? (
+                      <motion.div
+                        animate={{ height: heightPx, width: modelWidthPx }}
+                        className="drop-shadow-[0_12px_20px_rgba(0,0,0,0.42)]"
+                        data-height-px={heightPx.toFixed(2)}
+                        data-testid={`pokemon-model-${entry.id}`}
+                        transition={{ duration: 0.48, ease: 'easeOut' }}
+                      >
+                        <ModelFallbackBoundary
+                          key={entry.assets.model3dUrl}
+                          fallback={
+                            <img
+                              alt={entry.name}
+                              className="h-full w-auto max-w-none object-contain"
+                              loading={isActive ? 'eager' : 'lazy'}
+                              src={entry.assets.imageUrl}
+                            />
+                          }
+                        >
+                          <Suspense
+                            fallback={
+                              <img
+                                alt={entry.name}
+                                className="h-full w-auto max-w-none object-contain"
+                                loading={isActive ? 'eager' : 'lazy'}
+                                src={entry.assets.imageUrl}
+                              />
+                            }
+                          >
+                            <LazyPokemonModelCanvas modelUrl={entry.assets.model3dUrl ?? ''} />
+                          </Suspense>
+                        </ModelFallbackBoundary>
+                      </motion.div>
+                    ) : (
+                      <motion.img
+                        alt={entry.name}
+                        animate={{ height: heightPx }}
+                        className={`w-auto max-w-none object-contain drop-shadow-[0_12px_20px_rgba(0,0,0,0.45)] ${
+                          isActive ? 'brightness-110' : 'brightness-90'
+                        }`}
+                        data-height-px={heightPx.toFixed(2)}
+                        loading={isActive ? 'eager' : 'lazy'}
+                        src={entry.assets.imageUrl}
+                        transition={{ duration: 0.48, ease: 'easeOut' }}
+                      />
+                    )}
                   </figure>
                 </motion.div>
               )

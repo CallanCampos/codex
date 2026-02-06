@@ -3,6 +3,7 @@ import type { Entry, PokemonDatasetEntry } from '../types/pokemon'
 
 export const mapPokemonToEntries = (
   dataset: PokemonDatasetEntry[],
+  model3dMap: Record<string, string> = {},
 ): Entry[] => {
   const minHeight = dataset[0]?.heightMeters ?? 0.1
   const maxHeight = dataset[dataset.length - 1]?.heightMeters ?? 100
@@ -28,6 +29,7 @@ export const mapPokemonToEntries = (
         imageUrl: pokemon.model,
         cryUrl: pokemon.cry,
         modelPlaceholder: pokemon.model,
+        model3dUrl: model3dMap[pokemon.slug],
       },
     }
   })

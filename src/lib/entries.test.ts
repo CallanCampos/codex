@@ -34,6 +34,16 @@ describe('mapPokemonToEntries', () => {
     expect(entries[0].id).toBe('alpha')
     expect(entries[0].assets.imageUrl).toBe(dataset[0].model)
     expect(entries[1].sourceUrl).toBe(dataset[1].sourceUrl)
-    expect(entries[0].theme.gradientA).toMatch(/^#/) 
+    expect(entries[0].theme.gradientA).toMatch(/^#/)
+    expect(entries[0].assets.model3dUrl).toBeUndefined()
+  })
+
+  it('includes local model url when available in the model map', () => {
+    const entries = mapPokemonToEntries(dataset, {
+      beta: '/models/xy/beta/Beta/Beta_OpenCollada.DAE',
+    })
+
+    expect(entries[0].assets.model3dUrl).toBeUndefined()
+    expect(entries[1].assets.model3dUrl).toBe('/models/xy/beta/Beta/Beta_OpenCollada.DAE')
   })
 })

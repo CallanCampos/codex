@@ -105,10 +105,6 @@ for (const [index, slug] of POPULARITY_PRIORITY.entries()) {
   priorityMap.set(slug, index)
 }
 
-const hasResolvedProjectPokemonModel = (modelUrl: string): boolean => {
-  return !modelUrl.includes('fallback=1')
-}
-
 const getPopularityScore = (entry: PokemonDatasetEntry): number => {
   const priorityIndex = priorityMap.get(entry.slug)
   const priorityScore = priorityIndex !== undefined ? 1_000_000 - priorityIndex * 1_000 : 0
@@ -151,15 +147,7 @@ export const selectRepresentativePokemonByHeight = (
   const representatives: PokemonDatasetEntry[] = []
 
   for (const group of grouped.values()) {
-    const entriesWithResolvedModel = group.filter((entry) =>
-      hasResolvedProjectPokemonModel(entry.model),
-    )
-
-    if (entriesWithResolvedModel.length === 0) {
-      continue
-    }
-
-    const sortedByPopularity = [...entriesWithResolvedModel].sort(compareByPopularity)
+    const sortedByPopularity = [...group].sort(compareByPopularity)
     representatives.push(sortedByPopularity[0])
   }
 

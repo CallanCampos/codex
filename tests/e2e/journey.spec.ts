@@ -54,6 +54,14 @@ test('deep-link hash opens requested pokemon with description and source', async
   )
 })
 
+test('known mapped pokemon renders local 3d model canvas', async ({ page }) => {
+  await page.goto('/#pikachu')
+  await page.getByTestId('enter-button').click()
+
+  await expect(page.getByTestId('current-entry-title')).toHaveText(/Pikachu/i)
+  await expect(page.getByTestId('pokemon-model-pikachu')).toBeVisible()
+})
+
 test('jump button opens picker and navigates to selected pokemon', async ({ page }) => {
   await page.goto('/')
   await page.getByTestId('enter-button').click()

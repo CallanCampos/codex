@@ -46,6 +46,20 @@ jobs:
             sleep 15
           done
 
+      - name: Build 3D model assets (retry)
+        run: |
+          for attempt in 1 2 3; do
+            echo "Model build attempt ${attempt}"
+            if pnpm models:build; then
+              exit 0
+            fi
+            if [ "${attempt}" -eq 3 ]; then
+              echo "Model build failed after 3 attempts."
+              exit 1
+            fi
+            sleep 15
+          done
+
       - name: Unit and component tests
         run: pnpm test
 

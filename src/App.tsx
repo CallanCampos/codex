@@ -1,5 +1,6 @@
 import { lazy, Suspense, useMemo } from 'react'
 import pokemonDataset from './data/pokemon.sorted.json'
+import pokemonModel3dMap from './data/pokemon.models3d.json'
 import { ScaleJourneyApp } from './components/ScaleJourneyApp'
 import { mapPokemonToEntries } from './lib/entries'
 import { selectRepresentativePokemonByHeight } from './lib/representative'
@@ -16,7 +17,7 @@ function App() {
   }, [])
 
   const entries = useMemo(() => {
-    return mapPokemonToEntries(representativeDataset)
+    return mapPokemonToEntries(representativeDataset, pokemonModel3dMap as Record<string, string>)
   }, [representativeDataset])
 
   const enableThree = import.meta.env.VITE_ENABLE_3D === 'true'

@@ -21,6 +21,7 @@ export interface EntryAssets {
   imageUrl: string
   cryUrl: string
   modelPlaceholder: string
+  model3dUrl?: string
 }
 
 export interface Entry {
