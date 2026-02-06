@@ -14,6 +14,8 @@ interface ModelMeshProps {
   scene: THREE.Object3D
 }
 
+const ABSOLUTE_URL_PATTERN = /^(?:[a-z][a-z\d+\-.]*:)?\/\//i
+
 const getResourceDirectory = (url: string): string => {
   const withoutQuery = url.split('?')[0] ?? url
   const lastSlashIndex = withoutQuery.lastIndexOf('/')
@@ -22,6 +24,51 @@ const getResourceDirectory = (url: string): string => {
   }
 
   return withoutQuery.slice(0, lastSlashIndex + 1)
+}
+
+const normalizeTextureUrl = (inputUrl: string, resourceDirectory: string): string => {
+  if (!inputUrl) {
+    return inputUrl
+  }
+
+  if (
+    ABSOLUTE_URL_PATTERN.test(inputUrl) ||
+    inputUrl.startsWith('data:') ||
+    inputUrl.startsWith('blob:')
+  ) {
+    return inputUrl
+  }
+
+  const normalizedResourceDirectory = resourceDirectory.endsWith('/')
+    ? resourceDirectory
+    : `${resourceDirectory}/`
+  const resourcePathOnly = normalizedResourceDirectory.replace(/^https?:\/\/[^/]+/i, '')
+
+  let url = inputUrl.replace(/\\/g, '/')
+  if (url.startsWith(normalizedResourceDirectory) || url.startsWith(resourcePathOnly)) {
+    return url
+  }
+
+  if (/^\/(images|textures|images_shiny|shiny)\//i.test(url)) {
+    url = url.replace(/^\/+/, '')
+    return `${normalizedResourceDirectory}${url}`
+  }
+
+  const textureFolders = ['images_shiny/', 'images/', 'textures/', 'shiny/']
+  const lowerUrl = url.toLowerCase()
+  for (const folder of textureFolders) {
+    const index = lowerUrl.lastIndexOf(folder)
+    if (index >= 0) {
+      const trimmed = url.slice(index).replace(/^\.\//, '')
+      return `${normalizedResourceDirectory}${trimmed}`
+    }
+  }
+
+  if (url.startsWith('/')) {
+    return url
+  }
+
+  return `${normalizedResourceDirectory}${url.replace(/^\.\//, '')}`
 }
 
 const applyMaterialTweaks = (root: THREE.Object3D): void => {
@@ -60,14 +107,17 @@ const ModelMesh = ({ scene }: ModelMeshProps) => {
     const box = new THREE.Box3().setFromObject(root)
     const size = new THREE.Vector3()
     const center = new THREE.Vector3()
+    const min = box.min.clone()
     box.getSize(size)
     box.getCenter(center)
 
-    const safeHeight = Math.max(size.y, 0.001)
-    const uniformScale = 1.88 / safeHeight
+    const maxDimension = Math.max(size.x, size.y, size.z, 0.001)
+    const likelyUpright = size.y >= maxDimension * 0.34
+    const effectiveHeight = Math.max(likelyUpright ? size.y : maxDimension, 0.001)
+    const uniformScale = 1.88 / effectiveHeight
     const position = new THREE.Vector3(
       -center.x * uniformScale,
-      -center.y * uniformScale - 0.9,
+      -min.y * uniformScale - 0.9,
       -center.z * uniformScale,
     )
 
@@ -84,6 +134,7 @@ const ModelMesh = ({ scene }: ModelMeshProps) => {
 const GlbModelMesh = ({ modelUrl }: PokemonModelCanvasProps) => {
   const gltf = useLoader(GLTFLoader, modelUrl, (loader) => {
     const resourceDirectory = getResourceDirectory(modelUrl)
+    loader.manager.setURLModifier((url) => normalizeTextureUrl(url, resourceDirectory))
     loader.setResourcePath(resourceDirectory)
   })
   return <ModelMesh scene={gltf.scene} />
@@ -92,6 +143,7 @@ const GlbModelMesh = ({ modelUrl }: PokemonModelCanvasProps) => {
 const DaeModelMesh = ({ modelUrl }: PokemonModelCanvasProps) => {
   const collada = useLoader(ColladaLoader, modelUrl, (loader) => {
     const resourceDirectory = getResourceDirectory(modelUrl)
+    loader.manager.setURLModifier((url) => normalizeTextureUrl(url, resourceDirectory))
     loader.setResourcePath(resourceDirectory)
   })
   return <ModelMesh scene={collada.scene} />
@@ -100,6 +152,7 @@ const DaeModelMesh = ({ modelUrl }: PokemonModelCanvasProps) => {
 const FbxModelMesh = ({ modelUrl }: PokemonModelCanvasProps) => {
   const fbx = useLoader(FBXLoader, modelUrl, (loader) => {
     const resourceDirectory = getResourceDirectory(modelUrl)
+    loader.manager.setURLModifier((url) => normalizeTextureUrl(url, resourceDirectory))
     loader.setResourcePath(resourceDirectory)
   })
   return <ModelMesh scene={fbx} />
@@ -112,8 +165,9 @@ export const PokemonModelCanvas = ({ modelUrl }: PokemonModelCanvasProps) => {
   return (
     <Canvas
       camera={{ fov: 28, position: [0, 0.2, 6.4] }}
-      dpr={[1, 2]}
-      gl={{ alpha: true, antialias: true, powerPreference: 'high-performance' }}
+      dpr={[1, 1.5]}
+      frameloop="demand"
+      gl={{ alpha: true, antialias: false, powerPreference: 'default' }}
       style={{ height: '100%', width: '100%' }}
     >
       <ambientLight intensity={0.92} />

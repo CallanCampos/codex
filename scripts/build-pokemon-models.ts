@@ -213,18 +213,18 @@ const scoreModelFile = (entryName: string, slug: string): number => {
 
   let score = 0
 
-  if (normalizedName.endsWith('.dae')) {
-    score += 120
+  // Prefer formats that consistently keep materials/textures intact in runtime:
+  // OpenCollada first, then FBX, with ColladaMax as last-resort.
+  if (normalizedName.endsWith('.dae') && normalizedName.includes('opencollada')) {
+    score += 190
   } else if (normalizedName.endsWith('.fbx')) {
-    score += 30
-  }
-
-  if (normalizedName.includes('opencollada')) {
-    score += 24
+    score += 150
+  } else if (normalizedName.endsWith('.dae')) {
+    score += 90
   }
 
   if (normalizedName.includes('colladamax')) {
-    score += 14
+    score -= 40
   }
 
   if (compactSlug && compactName.includes(compactSlug)) {
