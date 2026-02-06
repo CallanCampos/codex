@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   clampIndex,
   findEntryIndexBySlug,
-  getLogHeightNormalized,
   getProgressPercent,
 } from '../engine/scaleJourney'
 import { useWebAudioScaffold } from '../hooks/useWebAudioScaffold'
@@ -16,12 +15,12 @@ interface ScaleJourneyAppProps {
   entries: Entry[]
 }
 
-const VISIBLE_WINDOW = 1
-const MIN_ACTIVE_HEIGHT_RATIO = 0.48
-const MAX_ACTIVE_HEIGHT_RATIO = 0.78
-const BASELINE_MIN_OFFSET_PX = 94
-const BASELINE_MAX_OFFSET_PX = 126
+const ACTIVE_HEIGHT_RATIO = 0.58
+const BASELINE_OFFSET_PX = 112
 const WHEEL_STEP_THRESHOLD = 140
+const ENTRY_WIDTH_FACTOR = 0.38
+const MIN_GAP_METERS = 0.2
+const MAX_GAP_METERS = 5
 
 const getSlugFromHash = (): string => {
   const hash = window.location.hash.replace(/^#/, '')
@@ -84,17 +83,60 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
   const minHeight = entries[0]?.heightMeters ?? 0.01
   const maxHeight = entries[entries.length - 1]?.heightMeters ?? 1
   const activeHeightMeters = activeEntry?.heightMeters ?? minHeight
-  const normalizedScale = getLogHeightNormalized(activeHeightMeters, minHeight, maxHeight)
-  const scaleEase = 1 - (1 - normalizedScale) ** 1.4
+  const targetActiveHeightPx = stageSize.height * ACTIVE_HEIGHT_RATIO
+  const pixelsPerMeter = targetActiveHeightPx / Math.max(activeHeightMeters, 0.01)
+  const baselineOffsetPx = clamp(BASELINE_OFFSET_PX, 88, stageSize.height * 0.28)
 
-  const visibleEntries = useMemo(() => {
-    const start = Math.max(0, safeActiveIndex - VISIBLE_WINDOW)
-    const end = Math.min(entries.length - 1, safeActiveIndex + VISIBLE_WINDOW)
-    return entries.slice(start, end + 1).map((entry, offset) => ({
-      entry,
-      index: start + offset,
-    }))
-  }, [entries, safeActiveIndex])
+  const worldCenters = useMemo(() => {
+    if (entries.length === 0) {
+      return []
+    }
+
+    const centers = new Array<number>(entries.length).fill(0)
+    for (let index = 1; index < entries.length; index += 1) {
+      const previous = entries[index - 1]
+      const current = entries[index]
+      const previousHalfWidth = previous.heightMeters * ENTRY_WIDTH_FACTOR * 0.5
+      const currentHalfWidth = current.heightMeters * ENTRY_WIDTH_FACTOR * 0.5
+      const averageHeight = (previous.heightMeters + current.heightMeters) * 0.5
+      const gapMeters = clamp(averageHeight * 0.1, MIN_GAP_METERS, MAX_GAP_METERS)
+
+      centers[index] = centers[index - 1] + previousHalfWidth + gapMeters + currentHalfWidth
+    }
+
+    return centers
+  }, [entries])
+
+  const renderedEntries = useMemo(() => {
+    const viewportHalf = stageSize.width * 0.5
+    const overscanPx = stageSize.width * 0.2
+    const activeWorldX = worldCenters[safeActiveIndex] ?? 0
+
+    return entries
+      .map((entry, index) => {
+        const worldX = worldCenters[index] ?? 0
+        const x = (worldX - activeWorldX) * pixelsPerMeter
+        const heightPx = Math.max(1, entry.heightMeters * pixelsPerMeter)
+        const widthPx = Math.max(8, heightPx * ENTRY_WIDTH_FACTOR)
+        const distancePx = Math.abs(x)
+        const isVisible = distancePx - widthPx * 0.5 <= viewportHalf + overscanPx
+        const isActive = index === safeActiveIndex
+        const opacity = isActive ? 1 : clamp(0.92 - distancePx / (stageSize.width * 1.2), 0.2, 0.86)
+        const scale = isActive ? 1 : clamp(1 - distancePx / (stageSize.width * 3.4), 0.65, 0.98)
+
+        return {
+          entry,
+          index,
+          isActive,
+          isVisible,
+          heightPx,
+          x,
+          opacity,
+          scale,
+        }
+      })
+      .filter((item) => item.isVisible)
+  }, [entries, pixelsPerMeter, safeActiveIndex, stageSize.width, worldCenters])
 
   const progress = useMemo(() => {
     return getProgressPercent(safeActiveIndex, entries.length)
@@ -268,17 +310,9 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
     )
   }
 
-  const activeHeightRatio =
-    MIN_ACTIVE_HEIGHT_RATIO + (MAX_ACTIVE_HEIGHT_RATIO - MIN_ACTIVE_HEIGHT_RATIO) * scaleEase
-  const baselineOffsetPx = Math.round(
-    BASELINE_MIN_OFFSET_PX + (BASELINE_MAX_OFFSET_PX - BASELINE_MIN_OFFSET_PX) * scaleEase,
-  )
-  const perspectivePx = Math.round(clamp(1700 - scaleEase * 900, 760, 1700))
-  const targetActiveHeightPx = stageSize.height * activeHeightRatio
-  const pixelsPerMeter = targetActiveHeightPx / Math.max(activeEntry.heightMeters, 0.01)
-  const slotWidthPx = clamp(stageSize.width * (0.33 + scaleEase * 0.12), 160, 480)
-  const focusBottomMax = Math.max(205, stageSize.height - 268)
-  const focusInfoBottom = clamp(baselineOffsetPx + targetActiveHeightPx + 24, 170, focusBottomMax)
+  const perspectivePx = 1140
+  const focusBottomMax = Math.max(205, stageSize.height - 256)
+  const focusInfoBottom = clamp(baselineOffsetPx + targetActiveHeightPx + 18, 170, focusBottomMax)
   const activeListPosition = safeActiveIndex + 1
 
   return (
@@ -356,7 +390,7 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
 
       <div className="absolute inset-0 overflow-hidden" ref={stageRef}>
         <motion.div
-          animate={{ opacity: 0.16 + scaleEase * 0.22, scaleX: 0.96 + scaleEase * 0.36 }}
+          animate={{ opacity: 0.24, scaleX: 1.08 }}
           className="pointer-events-none absolute inset-x-[-14%] bottom-0 h-[45vh] origin-bottom rounded-[45%] bg-gradient-to-t from-black/40 via-slate-950/25 to-transparent blur-sm"
           transition={{ duration: 0.45, ease: 'easeOut' }}
         />
@@ -396,26 +430,18 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
         </motion.div>
 
         <motion.div
-          animate={{ rotateX: -4 - scaleEase * 6, y: scaleEase * -16 }}
+          animate={{ rotateX: -8, y: 0 }}
           className="absolute inset-x-0 bottom-0 top-24 overflow-hidden"
           style={{ perspective: `${perspectivePx}px`, transformOrigin: '50% 100%' }}
           transition={{ duration: 0.45, ease: 'easeOut' }}
         >
           <AnimatePresence initial={false}>
-            {visibleEntries.map(({ entry, index }) => {
-              const distance = index - safeActiveIndex
-              const absoluteDistance = Math.abs(distance)
-              const x = distance * slotWidthPx
-              const heightPx = Math.max(1, entry.heightMeters * pixelsPerMeter)
-              const opacity = index === safeActiveIndex ? 1 : clamp(0.64 - absoluteDistance * 0.15, 0.16, 0.72)
-              const isActive = index === safeActiveIndex
-              const scale = isActive ? 1 : clamp(0.88 - absoluteDistance * 0.11, 0.58, 0.88)
-              const y = isActive ? 0 : 12 + absoluteDistance * 10
+            {renderedEntries.map(({ entry, isActive, x, heightPx, opacity, scale }) => {
 
               return (
                 <motion.div
                   key={entry.id}
-                  animate={{ opacity, scale, x, y }}
+                  animate={{ opacity, scale, x, y: 0 }}
                   className="pointer-events-none absolute left-1/2"
                   exit={{ opacity: 0, y: 10 }}
                   initial={{ opacity: 0, y: 10 }}
@@ -445,12 +471,7 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
           </AnimatePresence>
 
           <AnimatePresence initial={false}>
-            {visibleEntries.map(({ entry, index }) => {
-              const distance = index - safeActiveIndex
-              const absoluteDistance = Math.abs(distance)
-              const x = distance * slotWidthPx
-              const opacity = index === safeActiveIndex ? 1 : clamp(0.5 - absoluteDistance * 0.18, 0.08, 0.5)
-              const isActive = index === safeActiveIndex
+            {renderedEntries.map(({ entry, isActive, x, opacity }) => {
 
               return (
                 <motion.div

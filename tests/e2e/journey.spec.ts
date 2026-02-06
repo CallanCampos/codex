@@ -6,6 +6,7 @@ test('active pokemon stays centered and wheel progresses smoothly', async ({ pag
 
   const title = page.getByTestId('current-entry-title')
   const firstTitle = (await title.textContent()) ?? ''
+  const firstSlug = await page.evaluate(() => window.location.hash.replace(/^#/, ''))
   await expect(page.getByTestId('list-counter')).toContainText('1 of')
 
   await page.mouse.wheel(0, -260)
@@ -37,7 +38,7 @@ test('active pokemon stays centered and wheel progresses smoothly', async ({ pag
       })
     })
     .toBeLessThan(20)
-  await expect(page.locator('[data-testid^="pokemon-figure-"]')).toHaveCount(3)
+  await expect(page.getByTestId(`pokemon-figure-${firstSlug}`)).toBeVisible()
 })
 
 test('deep-link hash opens requested pokemon with description and source', async ({ page }) => {

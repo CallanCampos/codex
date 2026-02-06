@@ -141,7 +141,7 @@ describe('ScaleJourneyApp', () => {
     render(<ScaleJourneyApp entries={testEntries} />)
 
     await user.click(screen.getByTestId('enter-button'))
-    const alphaActiveHeight = getHeightPx('alpha')
+    const alphaFocusedHeight = getHeightPx('alpha')
 
     fireEvent.wheel(window, { deltaY: -220 })
     await waitFor(() => {
@@ -153,8 +153,9 @@ describe('ScaleJourneyApp', () => {
       expect(screen.getByTestId('current-entry-title')).toHaveTextContent('Gamma')
     })
 
-    const gammaActiveHeight = getHeightPx('gamma')
-    expect(gammaActiveHeight).toBeGreaterThan(alphaActiveHeight)
+    const alphaWhenGammaFocused = getHeightPx('alpha')
+    expect(alphaWhenGammaFocused).toBeLessThan(alphaFocusedHeight / 2)
+    expect(getHeightPx('gamma')).toBeGreaterThan(alphaWhenGammaFocused)
   })
 
   it('uses list position counter instead of dex number', async () => {
