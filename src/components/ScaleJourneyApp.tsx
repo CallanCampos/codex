@@ -22,7 +22,7 @@ const ENTRY_WIDTH_FACTOR = 0.38
 const MIN_GAP_METERS = 0.9
 const MAX_GAP_METERS = 12
 const EDGE_FRAME_MARGIN_PX = 26
-const MIN_FIT_SCALE_FACTOR = 0.08
+const MIN_ACTIVE_SCALE_FACTOR = 0.5
 
 const getSlugFromHash = (): string => {
   const hash = window.location.hash.replace(/^#/, '')
@@ -98,28 +98,23 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
   }, [entries])
 
   const preferredPixelsPerMeter = targetActiveHeightPx / Math.max(activeHeightMeters, 0.01)
-  const firstEntry = entries[0]
-  const lastEntry = entries[entries.length - 1]
-  const firstHalfWidth = (firstEntry?.heightMeters ?? 0) * ENTRY_WIDTH_FACTOR * 0.5
-  const lastHalfWidth = (lastEntry?.heightMeters ?? 0) * ENTRY_WIDTH_FACTOR * 0.5
-  const leftWorldX = (worldCenters[0] ?? 0) - firstHalfWidth
-  const rightWorldX = (worldCenters[worldCenters.length - 1] ?? 0) + lastHalfWidth
   const activeWorldX = worldCenters[safeActiveIndex] ?? 0
-  const farthestDistanceMeters = Math.max(
-    activeWorldX - leftWorldX,
-    rightWorldX - activeWorldX,
-    0.01,
+  const activeNeighborIndices = [safeActiveIndex - 1, safeActiveIndex + 1].filter(
+    (index) => index >= 0 && index < entries.length,
   )
-  const fitAllPixelsPerMeter = Math.max(
-    (stageSize.width * 0.5 - EDGE_FRAME_MARGIN_PX) / farthestDistanceMeters,
-    0.0001,
-  )
-  const minReadablePixelsPerMeter = preferredPixelsPerMeter * MIN_FIT_SCALE_FACTOR
-  const pixelsPerMeter = Math.min(
-    preferredPixelsPerMeter,
-    Math.max(fitAllPixelsPerMeter, minReadablePixelsPerMeter),
-  )
-  const canFitAllInFrame = pixelsPerMeter <= fitAllPixelsPerMeter + 0.001
+  const availableNeighborFramePx = Math.max(stageSize.width * 0.5 - EDGE_FRAME_MARGIN_PX, 32)
+  const neighborVisibilityLimit = activeNeighborIndices.reduce((limit, index) => {
+    const neighbor = entries[index]
+    const neighborWorldX = worldCenters[index] ?? activeWorldX
+    const deltaMeters = Math.abs(neighborWorldX - activeWorldX)
+    const neighborHalfWidthMeters = neighbor.heightMeters * ENTRY_WIDTH_FACTOR * 0.5
+    const denominator = Math.max(deltaMeters - neighborHalfWidthMeters, 0.001)
+    const allowedPixelsPerMeter = availableNeighborFramePx / denominator
+    return Math.min(limit, allowedPixelsPerMeter)
+  }, Number.POSITIVE_INFINITY)
+  const preferredOrNeighborPixelsPerMeter = Math.min(preferredPixelsPerMeter, neighborVisibilityLimit)
+  const minReadablePixelsPerMeter = preferredPixelsPerMeter * MIN_ACTIVE_SCALE_FACTOR
+  const pixelsPerMeter = Math.max(preferredOrNeighborPixelsPerMeter, minReadablePixelsPerMeter)
 
   const renderedEntries = useMemo(() => {
     const viewportHalf = stageSize.width * 0.5
@@ -134,6 +129,7 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
         const distancePx = Math.abs(x)
         const isVisible = distancePx - widthPx * 0.5 <= viewportHalf + overscanPx
         const isActive = index === safeActiveIndex
+        const isAdjacent = Math.abs(index - safeActiveIndex) === 1
         const opacity = isActive ? 1 : clamp(0.95 - distancePx / (stageSize.width * 1.28), 0.2, 0.88)
         const scale = isActive ? 1 : clamp(1 - distancePx / (stageSize.width * 3.4), 0.65, 0.98)
 
@@ -142,14 +138,15 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
           index,
           isActive,
           isVisible,
+          isAdjacent,
           heightPx,
           x,
           opacity,
           scale,
         }
       })
-      .filter((item) => canFitAllInFrame || item.isVisible)
-  }, [activeWorldX, canFitAllInFrame, entries, pixelsPerMeter, safeActiveIndex, stageSize.width, worldCenters])
+      .filter((item) => item.isVisible || item.isAdjacent)
+  }, [activeWorldX, entries, pixelsPerMeter, safeActiveIndex, stageSize.width, worldCenters])
 
   const progress = useMemo(() => {
     return getProgressPercent(safeActiveIndex, entries.length)
