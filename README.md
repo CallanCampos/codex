@@ -13,8 +13,11 @@ Neal-style size exploration for Pokemon, powered by PokeAPI and rendered as a st
 
 ## Features
 - Intro gate and step-by-step journey (`Prev` / `Next` + arrow keys)
+- True side-by-side scale viewport with shared baseline and accurate relative heights
+- Continuous zoom-out as Pokemon heights increase
+- Manual zoom controls (in/out/reset) for tiny and very tall Pokemon
+- Jump-to-any-Pokemon search from anywhere in the journey
 - Hash deep links (`/#pikachu`)
-- Compare mode with side-by-side scaling
 - Dynamic background blending by log(height)
 - Pokemon dataset pipeline from PokeAPI
 

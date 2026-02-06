@@ -1,14 +1,14 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   clampIndex,
   findEntryIndexBySlug,
   getNextIndex,
   getPreviousIndex,
   getProgressPercent,
-  getSizeRatio,
 } from '../engine/scaleJourney'
 import { formatHeightDualUnits } from '../lib/height'
+import { clamp, computeAutoZoom, heightToPixels } from '../lib/scaleViewport'
 import { useWebAudioScaffold } from '../hooks/useWebAudioScaffold'
 import type { Entry } from '../types/pokemon'
 import { BackgroundSystem } from './BackgroundSystem'
@@ -16,6 +16,11 @@ import { BackgroundSystem } from './BackgroundSystem'
 interface ScaleJourneyAppProps {
   entries: Entry[]
 }
+
+const BASE_PIXELS_PER_METER = 180
+const VISIBLE_WINDOW = 10
+const MIN_MANUAL_ZOOM = 0.35
+const MAX_MANUAL_ZOOM = 3.5
 
 const getSlugFromHash = (): string => {
   const hash = window.location.hash.replace(/^#/, '')
@@ -36,11 +41,30 @@ const readInitialIndex = (entries: Entry[]): number => {
   return index >= 0 ? index : 0
 }
 
+const normalizeQuery = (value: string): string => {
+  return value.trim().toLowerCase()
+}
+
+const findEntryByQuery = (entries: Entry[], query: string): Entry | undefined => {
+  const normalized = normalizeQuery(query)
+  if (!normalized) {
+    return undefined
+  }
+
+  return (
+    entries.find((entry) => entry.id === normalized) ??
+    entries.find((entry) => entry.name.toLowerCase() === normalized) ??
+    entries.find((entry) => entry.name.toLowerCase().includes(normalized))
+  )
+}
+
 export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
   const [hasEntered, setHasEntered] = useState(false)
   const [activeIndex, setActiveIndex] = useState(() => readInitialIndex(entries))
-  const [compareEnabled, setCompareEnabled] = useState(false)
-  const [compareSlug, setCompareSlug] = useState(() => entries[0]?.id ?? '')
+  const [manualZoom, setManualZoom] = useState(1)
+  const [jumpQuery, setJumpQuery] = useState('')
+  const [stageHeight, setStageHeight] = useState(640)
+  const stageRef = useRef<HTMLDivElement | null>(null)
 
   const { resume, isSupported: isAudioSupported } = useWebAudioScaffold()
 
@@ -49,13 +73,19 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
   const minHeight = entries[0]?.heightMeters ?? 0.01
   const maxHeight = entries[entries.length - 1]?.heightMeters ?? 1
 
-  const compareEntry = useMemo(() => {
-    if (!compareSlug) {
-      return undefined
-    }
+  const visibleStart = Math.max(0, safeActiveIndex - VISIBLE_WINDOW + 1)
+  const visibleEntries = useMemo(() => {
+    return entries.slice(visibleStart, safeActiveIndex + 1)
+  }, [entries, safeActiveIndex, visibleStart])
 
-    return entries.find((entry) => entry.id === compareSlug)
-  }, [compareSlug, entries])
+  const tallestVisibleHeight =
+    visibleEntries[visibleEntries.length - 1]?.heightMeters ?? activeEntry?.heightMeters ?? 1
+
+  const autoZoom = useMemo(() => {
+    return computeAutoZoom(tallestVisibleHeight, stageHeight, BASE_PIXELS_PER_METER)
+  }, [stageHeight, tallestVisibleHeight])
+
+  const effectiveZoom = clamp(autoZoom * manualZoom, 0.015, 12)
 
   const progress = useMemo(() => {
     return getProgressPercent(safeActiveIndex, entries.length)
@@ -75,6 +105,18 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
   const movePrevious = useCallback(() => {
     setActiveIndex((current) => getPreviousIndex(current, entries.length))
   }, [entries.length])
+
+  const jumpToQuery = useCallback(() => {
+    const match = findEntryByQuery(entries, jumpQuery)
+    if (!match) {
+      return
+    }
+
+    const index = findEntryIndexBySlug(entries, match.id)
+    if (index >= 0) {
+      moveTo(index)
+    }
+  }, [entries, jumpQuery, moveTo])
 
   useEffect(() => {
     if (!activeEntry) {
@@ -136,18 +178,32 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
     }
   }, [activeEntry, entries, safeActiveIndex])
 
-  const ratioText = useMemo(() => {
-    if (!compareEntry || !activeEntry) {
-      return 'Pick a Pokemon to compare sizes.'
+  useEffect(() => {
+    const element = stageRef.current
+    if (!element) {
+      return
     }
 
-    const ratio = getSizeRatio(activeEntry.heightMeters, compareEntry.heightMeters)
-    if (ratio >= 1) {
-      return `${activeEntry.name} is ${ratio.toFixed(2)}x taller than ${compareEntry.name}.`
+    const applySize = () => {
+      const height = element.clientHeight
+      if (height > 100) {
+        setStageHeight(height)
+      }
     }
 
-    return `${compareEntry.name} is ${(1 / ratio).toFixed(2)}x taller than ${activeEntry.name}.`
-  }, [activeEntry, compareEntry])
+    applySize()
+
+    if (typeof ResizeObserver === 'undefined') {
+      return
+    }
+
+    const observer = new ResizeObserver(() => {
+      applySize()
+    })
+
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
 
   if (!activeEntry) {
     return (
@@ -157,9 +213,10 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
     )
   }
 
-  const compareScale = compareEntry
-    ? Math.max(0.2, Math.min(1.8, getSizeRatio(compareEntry.heightMeters, activeEntry.heightMeters)))
-    : 1
+  const activeHeightPx = Math.max(
+    1,
+    heightToPixels(activeEntry.heightMeters, BASE_PIXELS_PER_METER, effectiveZoom),
+  )
 
   return (
     <main className="relative min-h-screen overflow-hidden text-slate-100">
@@ -170,13 +227,13 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
       />
 
       {!hasEntered ? (
-        <div className="fixed inset-0 z-30 grid place-items-center bg-slate-950/80 backdrop-blur">
-          <div className="max-w-xl rounded-3xl border border-white/15 bg-slate-900/80 p-8 text-center shadow-2xl">
+        <div className="fixed inset-0 z-40 grid place-items-center bg-slate-950/85 backdrop-blur">
+          <div className="max-w-2xl rounded-3xl border border-white/15 bg-slate-900/85 p-8 text-center shadow-2xl">
             <p className="mb-3 text-sm uppercase tracking-[0.3em] text-cyan-200/80">Pokemon Scale</p>
-            <h1 className="mb-4 text-4xl font-semibold text-white">A Journey Through Size</h1>
+            <h1 className="mb-4 text-4xl font-semibold text-white">True Size Journey</h1>
             <p className="mb-8 text-slate-300">
-              Move from the tiniest to the tallest Pokemon with Neal-style step controls and
-              comparison mode.
+              Every Pokemon is drawn side-by-side on a shared baseline at the same scale. Move
+              forward to zoom farther out as heights increase.
             </p>
             <button
               className="rounded-full border border-cyan-200/60 bg-cyan-300/20 px-8 py-3 text-lg font-medium text-cyan-100 transition hover:bg-cyan-300/30"
@@ -195,16 +252,111 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
         </div>
       ) : null}
 
-      <header className="sticky top-0 z-20 border-b border-white/10 bg-slate-950/40 backdrop-blur-md">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
-          <div>
+      <header className="sticky top-0 z-30 border-b border-white/10 bg-slate-950/45 backdrop-blur-md">
+        <div className="mx-auto flex w-full max-w-[1500px] flex-wrap items-center gap-3 px-4 py-3">
+          <div className="min-w-[200px]">
             <p className="text-xs uppercase tracking-[0.25em] text-cyan-200/90">Current Pokemon</p>
             <h2 className="text-2xl font-semibold" data-testid="current-entry-title">
               {activeEntry.name}
             </h2>
+            <p className="text-sm text-slate-300">{formatHeightDualUnits(activeEntry.heightMeters)}</p>
           </div>
 
-          <div className="min-w-[220px]">
+          <div className="flex items-center gap-2">
+            <button
+              className="rounded-full border border-white/20 bg-black/35 px-4 py-2 text-sm transition hover:bg-black/50 disabled:opacity-40"
+              data-testid="prev-button"
+              disabled={safeActiveIndex === 0}
+              onClick={movePrevious}
+              type="button"
+            >
+              Prev
+            </button>
+            <button
+              className="rounded-full border border-white/20 bg-black/35 px-4 py-2 text-sm transition hover:bg-black/50 disabled:opacity-40"
+              data-testid="next-button"
+              disabled={safeActiveIndex >= entries.length - 1}
+              onClick={moveNext}
+              type="button"
+            >
+              Next
+            </button>
+          </div>
+
+          <div className="flex min-w-[260px] flex-1 items-center gap-2">
+            <input
+              className="w-full rounded-full border border-white/20 bg-slate-950/55 px-4 py-2 text-sm"
+              data-testid="jump-input"
+              list="pokemon-jump-list"
+              onChange={(event) => setJumpQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault()
+                  jumpToQuery()
+                }
+              }}
+              placeholder="Jump to any Pokemon (name or slug)..."
+              value={jumpQuery}
+            />
+            <datalist id="pokemon-jump-list">
+              {entries.map((entry) => (
+                <option key={entry.id} value={entry.name} />
+              ))}
+            </datalist>
+            <button
+              className="rounded-full border border-cyan-200/40 px-4 py-2 text-sm text-cyan-100 hover:bg-cyan-300/20"
+              data-testid="jump-button"
+              onClick={jumpToQuery}
+              type="button"
+            >
+              Jump
+            </button>
+          </div>
+
+          <div className="min-w-[240px]">
+            <div className="mb-1 flex items-center justify-between text-xs text-slate-300">
+              <span>View Zoom</span>
+              <span data-testid="zoom-value">x{manualZoom.toFixed(2)}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                className="rounded-full border border-white/20 px-2 py-1 text-xs hover:bg-white/10"
+                data-testid="zoom-out"
+                onClick={() => setManualZoom((value) => clamp(value / 1.2, MIN_MANUAL_ZOOM, MAX_MANUAL_ZOOM))}
+                type="button"
+              >
+                -
+              </button>
+              <input
+                className="w-full"
+                data-testid="zoom-slider"
+                max={MAX_MANUAL_ZOOM}
+                min={MIN_MANUAL_ZOOM}
+                onChange={(event) => setManualZoom(Number(event.target.value))}
+                step={0.01}
+                type="range"
+                value={manualZoom}
+              />
+              <button
+                className="rounded-full border border-white/20 px-2 py-1 text-xs hover:bg-white/10"
+                data-testid="zoom-in"
+                onClick={() => setManualZoom((value) => clamp(value * 1.2, MIN_MANUAL_ZOOM, MAX_MANUAL_ZOOM))}
+                type="button"
+              >
+                +
+              </button>
+              <button
+                className="rounded-full border border-white/20 px-2 py-1 text-xs hover:bg-white/10"
+                data-testid="zoom-reset"
+                onClick={() => setManualZoom(1)}
+                type="button"
+              >
+                Reset
+              </button>
+            </div>
+          </div>
+
+          <div className="min-w-[200px]">
             <div className="mb-1 flex justify-between text-xs text-slate-200/80">
               <span>
                 #{activeEntry.dexNumber} of {entries.length}
@@ -219,68 +371,9 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
               />
             </div>
           </div>
-        </div>
-      </header>
-
-      <section className="mx-auto grid min-h-[calc(100vh-80px)] max-w-6xl gap-8 px-4 py-10 lg:grid-cols-[1.5fr_1fr]">
-        <div className="relative flex items-center justify-center overflow-hidden rounded-3xl border border-white/10 bg-slate-900/30 p-6">
-          <div className="absolute left-4 top-4 rounded-full bg-black/30 px-3 py-1 text-xs uppercase tracking-[0.2em] text-slate-200">
-            Height: {formatHeightDualUnits(activeEntry.heightMeters)}
-          </div>
-
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={activeEntry.id}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              className="text-center"
-              exit={{ opacity: 0, y: 24, scale: 0.98 }}
-              initial={{ opacity: 0, y: -24, scale: 1.02 }}
-              transition={{ duration: 0.35, ease: 'easeOut' }}
-            >
-              <img
-                alt={activeEntry.name}
-                className="mx-auto h-[44vh] max-h-[420px] w-auto object-contain drop-shadow-[0_24px_40px_rgba(0,0,0,0.45)]"
-                loading="eager"
-                src={activeEntry.assets.imageUrl}
-              />
-              <p className="mt-4 text-sm uppercase tracking-[0.2em] text-cyan-100/90">
-                #{activeEntry.dexNumber}
-              </p>
-            </motion.div>
-          </AnimatePresence>
-
-          <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 gap-3">
-            <button
-              className="rounded-full border border-white/20 bg-black/35 px-5 py-2 text-sm transition hover:bg-black/50"
-              data-testid="prev-button"
-              disabled={safeActiveIndex === 0}
-              onClick={movePrevious}
-              type="button"
-            >
-              Prev
-            </button>
-            <button
-              className="rounded-full border border-white/20 bg-black/35 px-5 py-2 text-sm transition hover:bg-black/50"
-              data-testid="next-button"
-              disabled={safeActiveIndex >= entries.length - 1}
-              onClick={moveNext}
-              type="button"
-            >
-              Next
-            </button>
-          </div>
-        </div>
-
-        <aside className="flex flex-col gap-4 rounded-3xl border border-white/10 bg-slate-900/45 p-6">
-          <div>
-            <h3 className="text-sm uppercase tracking-[0.2em] text-cyan-200/90">Profile</h3>
-            <p className="mt-2 text-2xl font-semibold">{activeEntry.name}</p>
-            <p className="mt-2 text-slate-200">{formatHeightDualUnits(activeEntry.heightMeters)}</p>
-            <p className="mt-4 leading-relaxed text-slate-300">{activeEntry.description}</p>
-          </div>
 
           <a
-            className="inline-flex w-fit items-center rounded-full border border-cyan-200/50 px-4 py-2 text-sm text-cyan-100 hover:bg-cyan-300/20"
+            className="rounded-full border border-cyan-200/45 px-4 py-2 text-sm text-cyan-100 hover:bg-cyan-300/20"
             data-testid="source-link"
             href={activeEntry.sourceUrl}
             rel="noreferrer"
@@ -288,66 +381,72 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
           >
             Source
           </a>
+        </div>
+      </header>
 
-          <div className="mt-2 border-t border-white/10 pt-4">
-            <button
-              className="rounded-full border border-white/20 px-4 py-2 text-sm hover:bg-white/10"
-              data-testid="compare-toggle"
-              onClick={() => setCompareEnabled((value) => !value)}
-              type="button"
-            >
-              {compareEnabled ? 'Hide Compare' : 'Compare To'}
-            </button>
+      <section className="mx-auto flex min-h-[calc(100vh-94px)] w-full max-w-[1500px] flex-col px-4 py-4">
+        <div className="relative flex-1 overflow-hidden rounded-3xl border border-white/10 bg-slate-900/35" ref={stageRef}>
+          <div className="absolute inset-x-0 bottom-12 h-px bg-white/35" />
 
-            {compareEnabled ? (
-              <div className="mt-4 space-y-3">
-                <label className="text-xs uppercase tracking-[0.2em] text-slate-300" htmlFor="compare-select">
-                  Compare Target
-                </label>
-                <select
-                  className="w-full rounded-xl border border-white/20 bg-slate-950/40 p-2 text-sm"
-                  data-testid="compare-select"
-                  id="compare-select"
-                  onChange={(event) => setCompareSlug(event.target.value)}
-                  value={compareSlug}
-                >
-                  {entries.map((entry) => (
-                    <option key={entry.id} value={entry.id}>
-                      {entry.name}
-                    </option>
-                  ))}
-                </select>
-
-                <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-                  <p className="text-sm text-slate-200" data-testid="compare-ratio">
-                    {ratioText}
-                  </p>
-                  {compareEntry ? (
-                    <div className="mt-3 flex items-end gap-4">
-                      <div className="text-center">
-                        <img
-                          alt={activeEntry.name}
-                          className="h-28 w-auto object-contain"
-                          src={activeEntry.assets.imageUrl}
-                        />
-                        <p className="mt-1 text-xs text-slate-300">{activeEntry.name}</p>
-                      </div>
-                      <div className="text-center">
-                        <img
-                          alt={compareEntry.name}
-                          className="w-auto object-contain"
-                          src={compareEntry.assets.imageUrl}
-                          style={{ height: `${Math.round(112 * compareScale)}px` }}
-                        />
-                        <p className="mt-1 text-xs text-slate-300">{compareEntry.name}</p>
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
+          <motion.div
+            animate={{ height: activeHeightPx }}
+            className="absolute bottom-12 left-4 w-px bg-cyan-200/70"
+            transition={{ duration: 0.45, ease: 'easeOut' }}
+          />
+          <div className="absolute bottom-[calc(3rem+1px)] left-5 text-xs text-cyan-100/90">
+            {formatHeightDualUnits(activeEntry.heightMeters)}
           </div>
-        </aside>
+
+          <div className="absolute inset-x-0 bottom-12 top-8 overflow-x-auto">
+            <div className="mx-auto flex h-full min-w-max items-end justify-center gap-6 px-14">
+              <AnimatePresence initial={false} mode="popLayout">
+                {visibleEntries.map((entry) => {
+                  const heightPx = Math.max(
+                    1,
+                    heightToPixels(entry.heightMeters, BASE_PIXELS_PER_METER, effectiveZoom),
+                  )
+                  const isActive = entry.id === activeEntry.id
+
+                  return (
+                    <motion.figure
+                      key={entry.id}
+                      animate={{ opacity: isActive ? 1 : 0.72, y: isActive ? 0 : 4 }}
+                      className="flex flex-col items-center"
+                      data-testid={`pokemon-figure-${entry.id}`}
+                      exit={{ opacity: 0, y: 8 }}
+                      initial={{ opacity: 0, y: 10 }}
+                      layout
+                      transition={{ duration: 0.35 }}
+                    >
+                      <motion.img
+                        alt={entry.name}
+                        animate={{ height: heightPx }}
+                        className={`w-auto object-contain drop-shadow-[0_12px_20px_rgba(0,0,0,0.45)] ${
+                          isActive ? 'brightness-110' : 'brightness-90'
+                        }`}
+                        data-height-px={heightPx.toFixed(2)}
+                        loading={isActive ? 'eager' : 'lazy'}
+                        src={entry.assets.imageUrl}
+                        transition={{ duration: 0.45, ease: 'easeOut' }}
+                      />
+                      <figcaption
+                        className={`mt-2 text-center text-xs ${isActive ? 'text-cyan-100' : 'text-slate-300'}`}
+                      >
+                        <div className="font-medium">{entry.name}</div>
+                        <div>{entry.heightMeters.toFixed(2)} m</div>
+                      </figcaption>
+                    </motion.figure>
+                  )
+                })}
+              </AnimatePresence>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 text-sm text-slate-300">
+          Showing Pokemon #{visibleEntries[0]?.dexNumber ?? 1} to #{activeEntry.dexNumber} at a
+          shared scale. Move next to continue zooming out.
+        </div>
       </section>
     </main>
   )

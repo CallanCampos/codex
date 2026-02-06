@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-test('app loads and step navigation updates current title', async ({ page }) => {
+test('app loads with side-by-side scale view and progresses smoothly', async ({ page }) => {
   await page.goto('/')
   await page.getByTestId('enter-button').click()
 
@@ -10,6 +10,7 @@ test('app loads and step navigation updates current title', async ({ page }) => 
   await page.getByTestId('next-button').click()
   await expect(title).not.toHaveText(firstTitle)
   await expect(page).toHaveURL(/#.+/)
+  await expect(page.locator('[data-testid^="pokemon-figure-"]')).toHaveCount(2)
 })
 
 test('deep-link hash opens requested pokemon', async ({ page }) => {
@@ -33,11 +34,18 @@ test('keyboard arrows navigate entries after entering journey', async ({ page })
   await expect(title).not.toHaveText(before)
 })
 
-test('compare mode shows ratio text for selected target', async ({ page }) => {
+test('user can jump to any pokemon and adjust zoom', async ({ page }) => {
   await page.goto('/#pikachu')
   await page.getByTestId('enter-button').click()
 
-  await page.getByTestId('compare-toggle').click()
-  await page.getByTestId('compare-select').selectOption('charizard')
-  await expect(page.getByTestId('compare-ratio')).toContainText(/taller than/i)
+  await page.getByTestId('jump-input').fill('Charizard')
+  await page.getByTestId('jump-button').click()
+  await expect(page.getByTestId('current-entry-title')).toHaveText(/Charizard/i)
+  await expect(page).toHaveURL(/#charizard/i)
+
+  const activeImage = page.locator('[data-testid^="pokemon-figure-"] img').last()
+  const before = Number.parseFloat((await activeImage.getAttribute('data-height-px')) ?? '0')
+  await page.getByTestId('zoom-in').click()
+  const after = Number.parseFloat((await activeImage.getAttribute('data-height-px')) ?? '0')
+  expect(after).toBeGreaterThan(before)
 })

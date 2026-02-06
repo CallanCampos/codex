@@ -3,9 +3,9 @@
 ## Overview
 This project emulates the `neal.fun/size-of-life` interaction model with a Pokemon-driven dataset:
 - Intro gate before interaction.
-- Step-based journey (next/prev + arrow keys).
+- Step-based journey (next/prev + arrow keys) with continuous zoom-out.
 - Hash deep-linking (`/#slug`).
-- Compare mode with a second target.
+- Jump-to-any-Pokemon controls.
 - Dynamic background blending based on Pokemon height.
 
 ## Data Pipeline
@@ -56,8 +56,12 @@ Layers:
 - Slow parallax blobs.
 
 ## Rendering Model
-The app is a stage-based (single-entry) renderer, not scroll-virtualized.
-Only the active Pokemon is rendered as the primary stage target, with neighbor preloading for smooth transitions.
+The app renders a shared baseline scale viewport (no card-to-card layout):
+- A visible window of Pokemon up to the active index is rendered side-by-side.
+- All sprites use the same `pixelsPerMeter * effectiveZoom` transform, so relative height is accurate.
+- `effectiveZoom = autoZoom(tallestVisible, viewportHeight) * manualZoom`.
+- As the active Pokemon gets taller, `autoZoom` decreases to create a smooth zoom-out journey.
+- Users can override with manual zoom in/out controls.
 
 ## URL Behavior
 - Initial hash is parsed on load to select the entry.
