@@ -1,25 +1,26 @@
 # Pokemon Size Journey
 
-Neal-style size exploration for Pokemon, powered by PokeAPI and rendered as a static React app.
+ Neal-style size exploration for Pokemon, powered by PokeAPI metadata and Project Pokemon model sprites, rendered as a static React app.
 
 ## Stack
 - React + TypeScript + Vite
 - Tailwind CSS
 - Framer Motion
 - Three.js + `@react-three/fiber` + `@react-three/drei` (scaffold only)
-- Web Audio API scaffold
+- Web Audio API procedural soundtrack
 - Vitest + React Testing Library
 - Playwright (Chromium)
 
 ## Features
-- Intro gate and step-by-step journey (`Prev` / `Next` + arrow keys)
+- Intro gate and wheel/arrow-key journey navigation
 - True side-by-side scale viewport with shared baseline and accurate relative heights
 - Continuous zoom-out as Pokemon heights increase
-- Manual zoom controls (in/out/reset) for tiny and very tall Pokemon
+- Auto zoom that keeps scale comparisons readable
 - Jump-to-any-Pokemon search from anywhere in the journey
 - Hash deep links (`/#pikachu`)
 - Dynamic background blending by log(height)
-- Pokemon dataset pipeline from PokeAPI
+- Pokemon dataset pipeline from PokeAPI with Project Pokemon model sprite URLs
+- Layered background music that adds instruments as you progress
 
 ## Getting Started
 Node.js `20.19+` is recommended (Vite 7 requirement).
@@ -58,6 +59,7 @@ pnpm dev
 ## Data Notes
 - Species count is fetched dynamically from PokeAPI at build time.
 - As of February 6, 2026, PokeAPI `pokemon-species` reports 1025 species.
+- Model images are sourced from Project Pokemon (`sprites-models/sv-sprites-home/{dex}.png`).
 - Output is sorted from smallest to largest by `heightMeters`.
 
 ## Deploy (GitHub Pages)

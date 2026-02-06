@@ -59,6 +59,8 @@ interface PokemonSpeciesResponse {
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const projectRoot = path.resolve(__dirname, '..')
 const outputFilePath = path.join(projectRoot, 'src', 'data', 'pokemon.sorted.json')
+const projectPokemonSvHomeBaseUrl =
+  'https://projectpokemon.org/images/sprites-models/sv-sprites-home'
 
 const DEFAULT_CONCURRENCY = 8
 const REQUEST_TIMEOUT_MS = 20000
@@ -78,6 +80,11 @@ const titleCaseSlug = (slug: string): string => {
 
 const normalizeSlug = (slug: string): string => {
   return slug.toLowerCase().replace(/[^a-z0-9-]/g, '-')
+}
+
+const buildProjectPokemonModelUrl = (dexNumber: number): string => {
+  const dex = String(dexNumber).padStart(4, '0')
+  return `${projectPokemonSvHomeBaseUrl}/${dex}.png`
 }
 
 const fetchJson = async <T>(url: string, retries = 3): Promise<T> => {
@@ -187,16 +194,10 @@ const buildEntryFromDexNumber = async (
 
   const slug = normalizeSlug(species.name)
   const cry = pokemon.cries.latest ?? pokemon.cries.legacy
-  const model =
-    pokemon.sprites.other['official-artwork'].front_default ??
-    pokemon.sprites.front_default
+  const model = buildProjectPokemonModelUrl(dexNumber)
 
   if (!cry) {
     throw new Error(`Missing cry URL for dex #${dexNumber}`)
-  }
-
-  if (!model) {
-    throw new Error(`Missing artwork URL for dex #${dexNumber}`)
   }
 
   return {
