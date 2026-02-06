@@ -6,6 +6,7 @@ import {
   getStepDurationSeconds,
   midiToFrequency,
 } from '../lib/music'
+import { resolveAssetUrl } from '../lib/assetUrl'
 
 export interface WebAudioScaffold {
   isSupported: boolean
@@ -307,11 +308,19 @@ const loadExternalStemBuffers = async (
 ): Promise<AudioBuffer[] | null> => {
   const paths = Array.from(
     { length: EXTERNAL_STEM_COUNT },
-    (_, index) => `/audio/pokemon-layer-${index + 1}.ogg`,
+    (_, index) => resolveAssetUrl(`audio/pokemon-layer-${index + 1}.ogg`) ?? '',
   )
 
   try {
-    const responses = await Promise.all(paths.map((path) => fetch(path)))
+    const firstResponse = await fetch(paths[0])
+    if (!firstResponse.ok) {
+      return null
+    }
+
+    const responses = await Promise.all([
+      Promise.resolve(firstResponse),
+      ...paths.slice(1).map((path) => fetch(path)),
+    ])
     if (responses.some((response) => !response.ok)) {
       return null
     }

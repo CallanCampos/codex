@@ -609,7 +609,7 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
         >
           <AnimatePresence initial={false}>
             {renderedEntries.map(({ entry, isActive, x, heightPx, opacity, scale, widthPx }) => {
-              const renderModel = canRender3dModels && Boolean(entry.assets.model3dUrl)
+              const renderModel = canRender3dModels && isActive && Boolean(entry.assets.model3dUrl)
               const modelWidthPx = Math.max(widthPx * 1.55, heightPx * 0.72, 84)
 
               return (

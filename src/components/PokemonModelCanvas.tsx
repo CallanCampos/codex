@@ -4,6 +4,7 @@ import * as THREE from 'three'
 import { ColladaLoader } from 'three/addons/loaders/ColladaLoader.js'
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js'
 
 interface PokemonModelCanvasProps {
   modelUrl: string
@@ -29,9 +30,7 @@ const applyMaterialTweaks = (root: THREE.Object3D): void => {
       const typed = material as THREE.Material & {
         alphaTest?: number
         map?: THREE.Texture
-        transparent?: boolean
       }
-      typed.transparent = typed.alphaTest ? typed.alphaTest < 0.02 : false
       if (typed.map) {
         typed.map.colorSpace = THREE.SRGBColorSpace
         typed.map.generateMipmaps = true
@@ -45,7 +44,7 @@ const applyMaterialTweaks = (root: THREE.Object3D): void => {
 
 const ModelMesh = ({ scene }: ModelMeshProps) => {
   const normalized = useMemo(() => {
-    const root = scene.clone(true)
+    const root = cloneSkeleton(scene)
     applyMaterialTweaks(root)
 
     const box = new THREE.Box3().setFromObject(root)
