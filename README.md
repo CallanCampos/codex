@@ -59,13 +59,14 @@ pnpm dev
 
 ## Deploy (GitHub Pages)
 A workflow is included at `.github/workflows/deploy-pages.yml`.
-It builds static assets and publishes to GitHub Pages.
+It builds static assets and publishes them to the `gh-pages` branch.
 
 The workflow sets `VITE_BASE_PATH` automatically to match repository pages path.
 
 If deployment fails on first run, confirm repository settings:
 1. In GitHub, open `Settings -> Pages`.
-2. Set `Source` to `GitHub Actions`.
+2. Set `Source` to `Deploy from a branch`.
+3. Select branch `gh-pages` and folder `/ (root)`.
 
 ## Architecture
 See `docs/ARCHITECTURE.md` for engine, data pipeline, and background details.
