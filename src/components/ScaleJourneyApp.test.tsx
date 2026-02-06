@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ScaleJourneyApp } from './ScaleJourneyApp'
 import type { Entry } from '../types/pokemon'
@@ -61,6 +61,31 @@ describe('ScaleJourneyApp', () => {
     expect(screen.getByTestId('current-entry-title')).toHaveTextContent('Alpha')
   })
 
+  it('updates URL hash when navigation changes active entry', async () => {
+    const user = userEvent.setup()
+    render(<ScaleJourneyApp entries={testEntries} />)
+
+    await user.click(screen.getByTestId('enter-button'))
+    await user.click(screen.getByTestId('next-button'))
+
+    expect(window.location.hash).toBe('#beta')
+  })
+
+  it('responds to hashchange events after initial load', async () => {
+    const user = userEvent.setup()
+    render(<ScaleJourneyApp entries={testEntries} />)
+    await user.click(screen.getByTestId('enter-button'))
+
+    act(() => {
+      window.history.replaceState(null, '', '#beta')
+      window.dispatchEvent(new Event('hashchange'))
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('current-entry-title')).toHaveTextContent('Beta')
+    })
+  })
+
   it('loads from deep-link hash', async () => {
     const user = userEvent.setup()
     window.history.replaceState(null, '', '#beta')
@@ -84,5 +109,34 @@ describe('ScaleJourneyApp', () => {
     await user.selectOptions(screen.getByTestId('compare-select'), 'beta')
 
     expect(screen.getByTestId('compare-ratio').textContent).toContain('Alpha')
+  })
+
+  it('updates source link and button disabled states at bounds', async () => {
+    const user = userEvent.setup()
+    render(<ScaleJourneyApp entries={testEntries} />)
+
+    await user.click(screen.getByTestId('enter-button'))
+    expect(screen.getByTestId('prev-button')).toBeDisabled()
+
+    await user.click(screen.getByTestId('next-button'))
+    expect(screen.getByTestId('next-button')).toBeDisabled()
+    expect(screen.getByTestId('source-link')).toHaveAttribute(
+      'href',
+      'https://www.pokemon.com/us/pokedex/beta',
+    )
+  })
+
+  it('shows compare ratio in both directions', async () => {
+    const user = userEvent.setup()
+    render(<ScaleJourneyApp entries={testEntries} />)
+    await user.click(screen.getByTestId('enter-button'))
+
+    await user.click(screen.getByTestId('compare-toggle'))
+    await user.selectOptions(screen.getByTestId('compare-select'), 'beta')
+    expect(screen.getByTestId('compare-ratio')).toHaveTextContent('Beta is')
+
+    await user.click(screen.getByTestId('next-button'))
+    await user.selectOptions(screen.getByTestId('compare-select'), 'alpha')
+    expect(screen.getByTestId('compare-ratio')).toHaveTextContent('Beta is')
   })
 })

@@ -60,7 +60,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const projectRoot = path.resolve(__dirname, '..')
 const outputFilePath = path.join(projectRoot, 'src', 'data', 'pokemon.sorted.json')
 
-const DEFAULT_CONCURRENCY = 12
+const DEFAULT_CONCURRENCY = 8
+const REQUEST_TIMEOUT_MS = 20000
 
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => {
@@ -84,9 +85,31 @@ const fetchJson = async <T>(url: string, retries = 3): Promise<T> => {
 
   while (attempt <= retries) {
     try {
-      const response = await fetch(url)
+      const controller = new AbortController()
+      const timeout = setTimeout(() => {
+        controller.abort()
+      }, REQUEST_TIMEOUT_MS)
+      let response: Response
+      try {
+        response = await fetch(url, {
+          signal: controller.signal,
+          headers: {
+            Accept: 'application/json',
+            'User-Agent': 'pokemon-size-journey-data-pipeline/1.0',
+          },
+        })
+      } finally {
+        clearTimeout(timeout)
+      }
+
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status} for ${url}`)
+        const retryAfterHeader = response.headers.get('retry-after')
+        const retryAfterMs = retryAfterHeader
+          ? Number.parseInt(retryAfterHeader, 10) * 1000
+          : undefined
+        const error = new Error(`HTTP ${response.status} for ${url}`)
+        ;(error as Error & { retryAfterMs?: number }).retryAfterMs = retryAfterMs
+        throw error
       }
 
       return (await response.json()) as T
@@ -95,7 +118,14 @@ const fetchJson = async <T>(url: string, retries = 3): Promise<T> => {
         throw error
       }
 
-      const delayMs = 300 * 2 ** attempt
+      const retryAfterMs =
+        typeof error === 'object' &&
+        error &&
+        'retryAfterMs' in error &&
+        typeof (error as { retryAfterMs?: number }).retryAfterMs === 'number'
+          ? (error as { retryAfterMs?: number }).retryAfterMs
+          : undefined
+      const delayMs = retryAfterMs ?? 600 * 2 ** attempt
       await sleep(delayMs)
       attempt += 1
     }
@@ -198,6 +228,7 @@ const main = async (): Promise<void> => {
   console.log('Fetching PokeAPI species count...')
   const speciesCount = await getSpeciesCount()
   console.log(`Building dataset for ${speciesCount} species...`)
+  console.log(`Using concurrency=${DEFAULT_CONCURRENCY}`)
 
   const dexNumbers = Array.from({ length: speciesCount }, (_, index) => index + 1)
   const startTime = Date.now()

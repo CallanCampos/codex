@@ -1,4 +1,11 @@
-import { sortPokemonByHeight, type PokemonDatasetEntry } from './pokemon-data'
+import {
+  buildSourceUrl,
+  cleanFlavorText,
+  decimetersToMeters,
+  hectogramsToKilograms,
+  sortPokemonByHeight,
+  type PokemonDatasetEntry,
+} from './pokemon-data'
 
 describe('sortPokemonByHeight', () => {
   it('sorts by height ascending and dex number for ties', () => {
@@ -40,5 +47,15 @@ describe('sortPokemonByHeight', () => {
 
     const sorted = sortPokemonByHeight(input)
     expect(sorted.map((entry) => entry.slug)).toEqual(['alpha', 'beta', 'delta'])
+  })
+
+  it('converts units from pokeapi correctly', () => {
+    expect(decimetersToMeters(17)).toBe(1.7)
+    expect(hectogramsToKilograms(905)).toBe(90.5)
+  })
+
+  it('cleans flavor text and builds source links', () => {
+    expect(cleanFlavorText('Line one\nline\ftwo')).toBe('Line one line two')
+    expect(buildSourceUrl('pikachu')).toBe('https://www.pokemon.com/us/pokedex/pikachu')
   })
 })

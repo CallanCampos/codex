@@ -17,6 +17,9 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
       - name: Checkout
@@ -24,13 +27,11 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 9
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 20.19.0
           cache: pnpm
 
       - name: Setup Pages
@@ -39,8 +40,19 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build dataset
-        run: pnpm data:build
+      - name: Build dataset (retry)
+        run: |
+          for attempt in 1 2 3; do
+            echo "Dataset build attempt ${attempt}"
+            if pnpm data:build; then
+              exit 0
+            fi
+            if [ "${attempt}" -eq 3 ]; then
+              echo "Dataset build failed after 3 attempts."
+              exit 1
+            fi
+            sleep 15
+          done
 
       - name: Set base path
         run: echo "VITE_BASE_PATH=/${GITHUB_REPOSITORY#*/}/" >> $GITHUB_ENV

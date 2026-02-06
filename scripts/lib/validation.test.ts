@@ -24,4 +24,24 @@ describe('validatePokemonDataset', () => {
     expect(errors.join('\n')).toContain('/0/sourceUrl')
     expect(errors.join('\n')).toContain('value=')
   })
+
+  it('reports missing required fields with path context', () => {
+    const missingFieldDataset = [
+      {
+        dexNumber: 1,
+        slug: 'bulbasaur',
+        name: 'Bulbasaur',
+        heightMeters: 0.7,
+        weightKg: 6.9,
+        description: 'A strange seed was planted on its back at birth.',
+        sourceUrl: 'https://www.pokemon.com/us/pokedex/bulbasaur',
+        cry: 'https://example.com/1.ogg',
+      },
+    ]
+
+    const errors = validatePokemonDataset(schema, missingFieldDataset)
+    expect(errors.length).toBeGreaterThan(0)
+    expect(errors.join('\n')).toContain("must have required property 'model'")
+    expect(errors[0]).toContain('/')
+  })
 })

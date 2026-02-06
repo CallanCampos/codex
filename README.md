@@ -63,5 +63,9 @@ It builds static assets and publishes to GitHub Pages.
 
 The workflow sets `VITE_BASE_PATH` automatically to match repository pages path.
 
+If deployment fails on first run, confirm repository settings:
+1. In GitHub, open `Settings -> Pages`.
+2. Set `Source` to `GitHub Actions`.
+
 ## Architecture
 See `docs/ARCHITECTURE.md` for engine, data pipeline, and background details.

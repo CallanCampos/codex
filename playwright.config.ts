@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test'
 
+const pnpmCommand = process.platform === 'win32' ? 'corepack pnpm' : 'pnpm'
+
 export default defineConfig({
   testDir: './tests/e2e',
   fullyParallel: true,
@@ -10,7 +12,7 @@ export default defineConfig({
     trace: 'on-first-retry',
   },
   webServer: {
-    command: 'corepack pnpm dev --host 127.0.0.1 --port 4173',
+    command: `${pnpmCommand} dev --host 127.0.0.1 --port 4173`,
     port: 4173,
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
