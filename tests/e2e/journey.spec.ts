@@ -1,16 +1,71 @@
 import { expect, test } from '@playwright/test'
 
-test('app fills the viewport and wheel progresses through pokemon', async ({ page }) => {
+test('active pokemon stays centered and wheel progresses smoothly', async ({ page }) => {
   await page.goto('/')
   await page.getByTestId('enter-button').click()
 
   const title = page.getByTestId('current-entry-title')
   const firstTitle = (await title.textContent()) ?? ''
 
-  await page.mouse.wheel(0, 320)
+  await page.mouse.wheel(0, 260)
   await expect(title).not.toHaveText(firstTitle)
   await expect(page).toHaveURL(/#.+/)
-  await expect(page.locator('[data-testid^="pokemon-figure-"]')).toHaveCount(2)
+
+  const activeSlug = await page.evaluate(() => {
+    return window.location.hash.replace(/^#/, '')
+  })
+  const activeFigure = page.getByTestId(`pokemon-figure-${activeSlug}`)
+  await expect(activeFigure).toBeVisible()
+
+  await expect
+    .poll(async () => {
+      return page.evaluate(() => {
+        const activeId = window.location.hash.replace(/^#/, '')
+        const element = document.querySelector(
+          `[data-testid="pokemon-figure-${activeId}"]`,
+        ) as HTMLElement | null
+        if (!element) {
+          return Number.POSITIVE_INFINITY
+        }
+
+        const rect = element.getBoundingClientRect()
+        const activeCenterX = rect.left + rect.width / 2
+        const viewportCenterX = window.innerWidth / 2
+        return Math.abs(activeCenterX - viewportCenterX)
+      })
+    })
+    .toBeLessThan(20)
+})
+
+test('deep-link hash opens requested pokemon with description and source', async ({ page }) => {
+  await page.goto('/#pikachu')
+  await page.getByTestId('enter-button').click()
+
+  await expect(page.getByTestId('current-entry-title')).toHaveText(/Pikachu/i)
+  await expect(page.getByTestId('active-description')).toContainText(/pikachu/i)
+  await expect(page.getByTestId('source-link')).toHaveAttribute(
+    'href',
+    /pokemon\.com\/us\/pokedex\/pikachu/,
+  )
+})
+
+test('jump input uses height-ordered dataset and navigates to target', async ({ page }) => {
+  await page.goto('/#joltik')
+  await page.getByTestId('enter-button').click()
+
+  const firstOption = page.locator('#pokemon-jump-list option').first()
+  await expect(firstOption).toHaveAttribute('value', /Joltik/i)
+
+  await page.getByTestId('jump-input').fill('Eternatus')
+  await page.getByTestId('jump-button').click()
+
+  await expect(page.getByTestId('current-entry-title')).toHaveText(/Eternatus/i)
+  await expect(page).toHaveURL(/#eternatus/i)
+})
+
+test('viewport remains full-screen without page scrollbars', async ({ page }) => {
+  await page.goto('/')
+  await page.getByTestId('enter-button').click()
 
   const viewportCheck = await page.evaluate(() => {
     return {
@@ -25,41 +80,4 @@ test('app fills the viewport and wheel progresses through pokemon', async ({ pag
   expect(viewportCheck.htmlOverflow).toBe('hidden')
   expect(viewportCheck.hasVerticalOverflow).toBe(false)
   expect(viewportCheck.hasHorizontalOverflow).toBe(false)
-})
-
-test('deep-link hash opens requested pokemon', async ({ page }) => {
-  await page.goto('/#pikachu')
-  await page.getByTestId('enter-button').click()
-
-  await expect(page.getByTestId('current-entry-title')).toHaveText(/Pikachu/i)
-  await expect(page.getByTestId('source-link')).toHaveAttribute(
-    'href',
-    /pokemon\.com\/us\/pokedex\/pikachu/,
-  )
-})
-
-test('keyboard arrows navigate entries after entering journey', async ({ page }) => {
-  await page.goto('/')
-  await page.getByTestId('enter-button').click()
-
-  const title = page.getByTestId('current-entry-title')
-  const before = (await title.textContent()) ?? ''
-  await page.keyboard.press('ArrowRight')
-  await expect(title).not.toHaveText(before)
-})
-
-test('user can jump to any pokemon and adjust zoom', async ({ page }) => {
-  await page.goto('/#pikachu')
-  await page.getByTestId('enter-button').click()
-
-  await page.getByTestId('jump-input').fill('Charizard')
-  await page.getByTestId('jump-button').click()
-  await expect(page.getByTestId('current-entry-title')).toHaveText(/Charizard/i)
-  await expect(page).toHaveURL(/#charizard/i)
-
-  const activeImage = page.locator('[data-testid^="pokemon-figure-"] img').last()
-  const before = Number.parseFloat((await activeImage.getAttribute('data-height-px')) ?? '0')
-  await page.getByTestId('zoom-in').click()
-  const after = Number.parseFloat((await activeImage.getAttribute('data-height-px')) ?? '0')
-  expect(after).toBeGreaterThan(before)
 })

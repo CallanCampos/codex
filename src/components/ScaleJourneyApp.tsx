@@ -1,15 +1,9 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  clampIndex,
-  findEntryIndexBySlug,
-  getNextIndex,
-  getPreviousIndex,
-  getProgressPercent,
-} from '../engine/scaleJourney'
+import { clampIndex, findEntryIndexBySlug, getProgressPercent } from '../engine/scaleJourney'
 import { useWebAudioScaffold } from '../hooks/useWebAudioScaffold'
 import { formatHeightDualUnits } from '../lib/height'
-import { clamp, computeAutoZoom, heightToPixels } from '../lib/scaleViewport'
+import { clamp } from '../lib/scaleViewport'
 import type { Entry } from '../types/pokemon'
 import { BackgroundSystem } from './BackgroundSystem'
 
@@ -17,12 +11,10 @@ interface ScaleJourneyAppProps {
   entries: Entry[]
 }
 
-const BASE_PIXELS_PER_METER = 180
-const VISIBLE_WINDOW = 10
-const MIN_MANUAL_ZOOM = 0.35
-const MAX_MANUAL_ZOOM = 3.5
-const WHEEL_NAV_THRESHOLD = 120
-const WHEEL_NAV_COOLDOWN_MS = 160
+const VISIBLE_WINDOW = 2
+const ACTIVE_HEIGHT_RATIO = 0.58
+const BASELINE_OFFSET_PX = 112
+const WHEEL_STEP_THRESHOLD = 140
 
 const getSlugFromHash = (): string => {
   const hash = window.location.hash.replace(/^#/, '')
@@ -72,53 +64,39 @@ const isFormControl = (target: EventTarget | null): boolean => {
 export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
   const [hasEntered, setHasEntered] = useState(false)
   const [activeIndex, setActiveIndex] = useState(() => readInitialIndex(entries))
-  const [manualZoom, setManualZoom] = useState(1)
   const [jumpQuery, setJumpQuery] = useState('')
-  const [stageHeight, setStageHeight] = useState(640)
+  const [stageSize, setStageSize] = useState({ height: 640, width: 1280 })
 
   const stageRef = useRef<HTMLDivElement | null>(null)
   const wheelAccumulatorRef = useRef(0)
-  const wheelLastNavigateRef = useRef(Number.NEGATIVE_INFINITY)
 
   const { resume, isSupported: isAudioSupported } = useWebAudioScaffold()
 
   const safeActiveIndex = clampIndex(activeIndex, entries.length)
   const activeEntry = entries[safeActiveIndex]
+
   const minHeight = entries[0]?.heightMeters ?? 0.01
   const maxHeight = entries[entries.length - 1]?.heightMeters ?? 1
 
-  const visibleStart = Math.max(0, safeActiveIndex - VISIBLE_WINDOW + 1)
   const visibleEntries = useMemo(() => {
-    return entries.slice(visibleStart, safeActiveIndex + 1)
-  }, [entries, safeActiveIndex, visibleStart])
-
-  const tallestVisibleHeight =
-    visibleEntries[visibleEntries.length - 1]?.heightMeters ?? activeEntry?.heightMeters ?? 1
-
-  const autoZoom = useMemo(() => {
-    return computeAutoZoom(tallestVisibleHeight, stageHeight, BASE_PIXELS_PER_METER)
-  }, [stageHeight, tallestVisibleHeight])
-
-  const effectiveZoom = clamp(autoZoom * manualZoom, 0.015, 12)
+    const start = Math.max(0, safeActiveIndex - VISIBLE_WINDOW)
+    const end = Math.min(entries.length - 1, safeActiveIndex + VISIBLE_WINDOW)
+    return entries.slice(start, end + 1).map((entry, offset) => ({
+      entry,
+      index: start + offset,
+    }))
+  }, [entries, safeActiveIndex])
 
   const progress = useMemo(() => {
     return getProgressPercent(safeActiveIndex, entries.length)
   }, [safeActiveIndex, entries.length])
 
-  const moveTo = useCallback(
+  const setActive = useCallback(
     (index: number) => {
       setActiveIndex(clampIndex(index, entries.length))
     },
     [entries.length],
   )
-
-  const moveNext = useCallback(() => {
-    setActiveIndex((current) => getNextIndex(current, entries.length))
-  }, [entries.length])
-
-  const movePrevious = useCallback(() => {
-    setActiveIndex((current) => getPreviousIndex(current, entries.length))
-  }, [entries.length])
 
   const jumpToQuery = useCallback(() => {
     const match = findEntryByQuery(entries, jumpQuery)
@@ -128,9 +106,9 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
 
     const index = findEntryIndexBySlug(entries, match.id)
     if (index >= 0) {
-      moveTo(index)
+      setActive(index)
     }
-  }, [entries, jumpQuery, moveTo])
+  }, [entries, jumpQuery, setActive])
 
   useEffect(() => {
     const previousBodyOverflow = document.body.style.overflow
@@ -160,13 +138,13 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
       const slug = getSlugFromHash()
       const index = findEntryIndexBySlug(entries, slug)
       if (index >= 0) {
-        moveTo(index)
+        setActive(index)
       }
     }
 
     window.addEventListener('hashchange', onHashChange)
     return () => window.removeEventListener('hashchange', onHashChange)
-  }, [entries, moveTo])
+  }, [entries, setActive])
 
   useEffect(() => {
     if (!hasEntered) {
@@ -176,18 +154,18 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'ArrowRight') {
         event.preventDefault()
-        moveNext()
+        setActive(safeActiveIndex + 1)
       }
 
       if (event.key === 'ArrowLeft') {
         event.preventDefault()
-        movePrevious()
+        setActive(safeActiveIndex - 1)
       }
     }
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [hasEntered, moveNext, movePrevious])
+  }, [hasEntered, safeActiveIndex, setActive])
 
   useEffect(() => {
     if (!hasEntered) {
@@ -202,28 +180,18 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
       event.preventDefault()
       wheelAccumulatorRef.current += event.deltaY
 
-      const now = performance.now()
-      if (now - wheelLastNavigateRef.current < WHEEL_NAV_COOLDOWN_MS) {
+      const steps = Math.trunc(wheelAccumulatorRef.current / WHEEL_STEP_THRESHOLD)
+      if (steps === 0) {
         return
       }
 
-      if (Math.abs(wheelAccumulatorRef.current) < WHEEL_NAV_THRESHOLD) {
-        return
-      }
-
-      if (wheelAccumulatorRef.current > 0) {
-        moveNext()
-      } else {
-        movePrevious()
-      }
-
-      wheelAccumulatorRef.current = 0
-      wheelLastNavigateRef.current = now
+      setActiveIndex((current) => clampIndex(current + steps, entries.length))
+      wheelAccumulatorRef.current -= steps * WHEEL_STEP_THRESHOLD
     }
 
     window.addEventListener('wheel', onWheel, { passive: false })
     return () => window.removeEventListener('wheel', onWheel)
-  }, [hasEntered, moveNext, movePrevious])
+  }, [entries.length, hasEntered])
 
   useEffect(() => {
     if (!activeEntry) {
@@ -248,8 +216,9 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
 
     const applySize = () => {
       const height = element.clientHeight
-      if (height > 100) {
-        setStageHeight(height)
+      const width = element.clientWidth
+      if (height > 100 && width > 100) {
+        setStageSize({ height, width })
       }
     }
 
@@ -275,10 +244,9 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
     )
   }
 
-  const activeHeightPx = Math.max(
-    1,
-    heightToPixels(activeEntry.heightMeters, BASE_PIXELS_PER_METER, effectiveZoom),
-  )
+  const targetActiveHeightPx = stageSize.height * ACTIVE_HEIGHT_RATIO
+  const pixelsPerMeter = targetActiveHeightPx / Math.max(activeEntry.heightMeters, 0.01)
+  const slotWidthPx = clamp(stageSize.width * 0.34, 300, 560)
 
   return (
     <main className="relative h-screen w-screen overflow-hidden text-slate-100">
@@ -294,10 +262,10 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
             <p className="mb-3 text-sm uppercase tracking-[0.3em] text-cyan-200/80">Pokemon Scale</p>
             <h1 className="mb-4 text-4xl font-semibold text-white">True Size Journey</h1>
             <p className="mb-3 text-slate-300">
-              Every Pokemon is drawn side-by-side on a shared baseline at the same scale.
+              Scroll to move through Pokemon from smallest to largest.
             </p>
             <p className="mb-8 text-slate-300">
-              Use your mouse wheel or trackpad to move forward and backward through the dex.
+              The focused Pokemon is always centered and kept at a consistent screen size.
             </p>
             <button
               className="rounded-full border border-cyan-200/60 bg-cyan-300/20 px-8 py-3 text-lg font-medium text-cyan-100 transition hover:bg-cyan-300/30"
@@ -316,7 +284,7 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
         </div>
       ) : null}
 
-      <div className="absolute inset-x-0 top-0 z-30 bg-gradient-to-b from-slate-950/65 to-transparent">
+      <div className="absolute inset-x-0 top-0 z-30 bg-gradient-to-b from-slate-950/70 to-transparent">
         <div className="flex w-full flex-wrap items-center gap-3 px-4 py-3">
           <div className="min-w-[180px]">
             <p className="text-xs uppercase tracking-[0.25em] text-cyan-200/90">Current Pokemon</p>
@@ -341,7 +309,7 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
               placeholder="Jump to any Pokemon (name or slug)..."
               value={jumpQuery}
             />
-            <datalist id="pokemon-jump-list">
+            <datalist data-testid="jump-datalist" id="pokemon-jump-list">
               {entries.map((entry) => (
                 <option key={entry.id} value={entry.name} />
               ))}
@@ -354,53 +322,6 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
             >
               Jump
             </button>
-          </div>
-
-          <div className="min-w-[230px]">
-            <div className="mb-1 flex items-center justify-between text-xs text-slate-300">
-              <span>View Zoom</span>
-              <span data-testid="zoom-value">x{manualZoom.toFixed(2)}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                className="rounded-full border border-white/20 px-2 py-1 text-xs hover:bg-white/10"
-                data-testid="zoom-out"
-                onClick={() =>
-                  setManualZoom((value) => clamp(value / 1.2, MIN_MANUAL_ZOOM, MAX_MANUAL_ZOOM))
-                }
-                type="button"
-              >
-                -
-              </button>
-              <input
-                className="w-full"
-                data-testid="zoom-slider"
-                max={MAX_MANUAL_ZOOM}
-                min={MIN_MANUAL_ZOOM}
-                onChange={(event) => setManualZoom(Number(event.target.value))}
-                step={0.01}
-                type="range"
-                value={manualZoom}
-              />
-              <button
-                className="rounded-full border border-white/20 px-2 py-1 text-xs hover:bg-white/10"
-                data-testid="zoom-in"
-                onClick={() =>
-                  setManualZoom((value) => clamp(value * 1.2, MIN_MANUAL_ZOOM, MAX_MANUAL_ZOOM))
-                }
-                type="button"
-              >
-                +
-              </button>
-              <button
-                className="rounded-full border border-white/20 px-2 py-1 text-xs hover:bg-white/10"
-                data-testid="zoom-reset"
-                onClick={() => setManualZoom(1)}
-                type="button"
-              >
-                Reset
-              </button>
-            </div>
           </div>
 
           <div className="min-w-[200px]">
@@ -418,74 +339,103 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
               />
             </div>
           </div>
-
-          <a
-            className="rounded-full border border-cyan-200/45 px-4 py-2 text-sm text-cyan-100 hover:bg-cyan-300/20"
-            data-testid="source-link"
-            href={activeEntry.sourceUrl}
-            rel="noreferrer"
-            target="_blank"
-          >
-            Source
-          </a>
         </div>
       </div>
 
+      <aside
+        className="absolute bottom-4 left-4 right-4 z-20 rounded-2xl border border-white/10 bg-slate-950/50 p-4 backdrop-blur md:bottom-auto md:left-auto md:right-6 md:top-1/2 md:w-[360px] md:-translate-y-1/2"
+        data-testid="active-description"
+      >
+        <p className="text-xs uppercase tracking-[0.2em] text-cyan-200/85">About {activeEntry.name}</p>
+        <p className="mt-2 text-sm leading-relaxed text-slate-200">{activeEntry.description}</p>
+        <a
+          className="mt-3 inline-flex rounded-full border border-cyan-200/45 px-3 py-1.5 text-xs text-cyan-100 hover:bg-cyan-300/20"
+          data-testid="source-link"
+          href={activeEntry.sourceUrl}
+          rel="noreferrer"
+          target="_blank"
+        >
+          Source
+        </a>
+      </aside>
+
       <div className="absolute inset-0 overflow-hidden" ref={stageRef}>
-        <div className="absolute inset-x-0 bottom-14 h-px bg-white/40" />
+        <div className="absolute inset-x-0 bottom-[112px] h-px bg-white/45" data-testid="baseline-line" />
 
-        <motion.div
-          animate={{ height: activeHeightPx }}
-          className="absolute bottom-14 left-4 w-px bg-cyan-200/70"
-          transition={{ duration: 0.45, ease: 'easeOut' }}
-        />
-        <div className="absolute bottom-[calc(3.5rem+1px)] left-5 text-xs text-cyan-100/90">
-          {formatHeightDualUnits(activeEntry.heightMeters)}
-        </div>
+        <div className="absolute inset-x-0 bottom-0 top-24 overflow-hidden">
+          <AnimatePresence initial={false}>
+            {visibleEntries.map(({ entry, index }) => {
+              const distance = index - safeActiveIndex
+              const absoluteDistance = Math.abs(distance)
+              const x = distance * slotWidthPx
+              const heightPx = Math.max(1, entry.heightMeters * pixelsPerMeter)
+              const opacity = index === safeActiveIndex ? 1 : clamp(0.54 - absoluteDistance * 0.18, 0.1, 0.6)
+              const isActive = index === safeActiveIndex
 
-        <div className="absolute inset-x-0 bottom-14 top-28 overflow-hidden">
-          <div className="flex h-full items-end justify-center gap-6 px-10">
-            <AnimatePresence initial={false} mode="popLayout">
-              {visibleEntries.map((entry) => {
-                const heightPx = Math.max(
-                  1,
-                  heightToPixels(entry.heightMeters, BASE_PIXELS_PER_METER, effectiveZoom),
-                )
-                const isActive = entry.id === activeEntry.id
-
-                return (
-                  <motion.figure
-                    key={entry.id}
-                    animate={{ opacity: isActive ? 1 : 0.72, y: isActive ? 0 : 4 }}
-                    className="flex flex-col items-center"
+              return (
+                <motion.div
+                  key={entry.id}
+                  animate={{ opacity, x, y: isActive ? 0 : 4 }}
+                  className="pointer-events-none absolute left-1/2"
+                  exit={{ opacity: 0, y: 10 }}
+                  initial={{ opacity: 0, y: 10 }}
+                  style={{ bottom: `${BASELINE_OFFSET_PX}px` }}
+                  transition={{ damping: 28, mass: 0.75, stiffness: 210, type: 'spring' }}
+                >
+                  <figure
+                    className="-translate-x-1/2 flex flex-col items-center"
+                    data-active={isActive ? 'true' : 'false'}
                     data-testid={`pokemon-figure-${entry.id}`}
-                    exit={{ opacity: 0, y: 8 }}
-                    initial={{ opacity: 0, y: 10 }}
-                    layout
-                    transition={{ duration: 0.35 }}
                   >
                     <motion.img
                       alt={entry.name}
                       animate={{ height: heightPx }}
-                      className={`w-auto max-w-[16vw] object-contain drop-shadow-[0_12px_20px_rgba(0,0,0,0.45)] ${
+                      className={`w-auto max-w-[18vw] object-contain drop-shadow-[0_12px_20px_rgba(0,0,0,0.45)] ${
                         isActive ? 'brightness-110' : 'brightness-90'
                       }`}
                       data-height-px={heightPx.toFixed(2)}
                       loading={isActive ? 'eager' : 'lazy'}
                       src={entry.assets.imageUrl}
-                      transition={{ duration: 0.45, ease: 'easeOut' }}
+                      transition={{ duration: 0.48, ease: 'easeOut' }}
                     />
-                    <figcaption
-                      className={`mt-2 text-center text-xs ${isActive ? 'text-cyan-100' : 'text-slate-300'}`}
-                    >
-                      <div className="font-medium">{entry.name}</div>
-                      <div>{entry.heightMeters.toFixed(2)} m</div>
-                    </figcaption>
-                  </motion.figure>
-                )
-              })}
-            </AnimatePresence>
-          </div>
+                  </figure>
+                </motion.div>
+              )
+            })}
+          </AnimatePresence>
+
+          <AnimatePresence initial={false}>
+            {visibleEntries.map(({ entry, index }) => {
+              const distance = index - safeActiveIndex
+              const absoluteDistance = Math.abs(distance)
+              const x = distance * slotWidthPx
+              const opacity = index === safeActiveIndex ? 1 : clamp(0.5 - absoluteDistance * 0.18, 0.08, 0.5)
+              const isActive = index === safeActiveIndex
+
+              return (
+                <motion.div
+                  key={`${entry.id}-label`}
+                  animate={{ opacity, x }}
+                  className="pointer-events-none absolute left-1/2"
+                  initial={{ opacity: 0 }}
+                  style={{ bottom: '20px' }}
+                  transition={{ damping: 28, mass: 0.75, stiffness: 210, type: 'spring' }}
+                >
+                  <div
+                    className="-translate-x-1/2 text-center text-xs"
+                    data-testid={`pokemon-label-${entry.id}`}
+                  >
+                    <div className={isActive ? 'font-semibold text-cyan-100' : 'font-medium text-slate-300'}>
+                      {entry.name}
+                    </div>
+                    <div className={isActive ? 'text-cyan-100/95' : 'text-slate-400'}>
+                      {entry.heightMeters.toFixed(2)} m
+                    </div>
+                  </div>
+                </motion.div>
+              )
+            })}
+          </AnimatePresence>
         </div>
 
         <div className="pointer-events-none absolute bottom-2 left-0 right-0 text-center text-sm text-slate-300">

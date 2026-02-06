@@ -61,38 +61,56 @@ describe('ScaleJourneyApp', () => {
     window.history.replaceState(null, '', '#alpha')
   })
 
-  it('renders intro gate and uses wheel navigation for side-by-side scaling', async () => {
+  it('centers exactly one active pokemon and updates via wheel', async () => {
     const user = userEvent.setup()
     render(<ScaleJourneyApp entries={testEntries} />)
 
     await user.click(screen.getByTestId('enter-button'))
-    fireEvent.wheel(window, { deltaY: 180 })
+    fireEvent.wheel(window, { deltaY: 220 })
 
     await waitFor(() => {
       expect(screen.getByTestId('current-entry-title')).toHaveTextContent('Beta')
     })
 
+    const activeFigures = document.querySelectorAll('[data-active="true"]')
+    expect(activeFigures).toHaveLength(1)
     expect(screen.getByTestId('pokemon-figure-alpha')).toBeInTheDocument()
     expect(screen.getByTestId('pokemon-figure-beta')).toBeInTheDocument()
     expect(getHeightPx('beta')).toBeGreaterThan(getHeightPx('alpha'))
   })
 
-  it('supports keyboard navigation and updates hash', async () => {
+  it('shows active description panel and source link', async () => {
     const user = userEvent.setup()
     render(<ScaleJourneyApp entries={testEntries} />)
 
     await user.click(screen.getByTestId('enter-button'))
-    await user.keyboard('{ArrowRight}')
+    expect(screen.getByTestId('active-description')).toHaveTextContent('Alpha description')
+    expect(screen.getByTestId('source-link')).toHaveAttribute(
+      'href',
+      'https://www.pokemon.com/us/pokedex/alpha',
+    )
 
-    expect(screen.getByTestId('current-entry-title')).toHaveTextContent('Beta')
-    expect(window.location.hash).toBe('#beta')
+    fireEvent.wheel(window, { deltaY: 220 })
+    await waitFor(() => {
+      expect(screen.getByTestId('active-description')).toHaveTextContent('Beta description')
+    })
   })
 
-  it('can jump to any pokemon by name', async () => {
+  it('orders jump list by dataset order and can jump by name', async () => {
     const user = userEvent.setup()
     render(<ScaleJourneyApp entries={testEntries} />)
 
     await user.click(screen.getByTestId('enter-button'))
+
+    const options = screen
+      .getByTestId('jump-datalist')
+      .querySelectorAll('option')
+    expect(Array.from(options).map((option) => option.getAttribute('value'))).toEqual([
+      'Alpha',
+      'Beta',
+      'Gamma',
+    ])
+
     await user.type(screen.getByTestId('jump-input'), 'Gamma')
     await user.click(screen.getByTestId('jump-button'))
 
@@ -102,36 +120,25 @@ describe('ScaleJourneyApp', () => {
     expect(window.location.hash).toBe('#gamma')
   })
 
-  it('lets user adjust zoom level and updates rendered pixel heights', async () => {
+  it('uses keyboard navigation and keeps baseline labels below the line', async () => {
     const user = userEvent.setup()
     render(<ScaleJourneyApp entries={testEntries} />)
 
     await user.click(screen.getByTestId('enter-button'))
-    fireEvent.wheel(window, { deltaY: 180 })
-    await waitFor(() => {
-      expect(screen.getByTestId('current-entry-title')).toHaveTextContent('Beta')
-    })
+    await user.keyboard('{ArrowRight}')
 
-    const before = getHeightPx('beta')
-    await user.click(screen.getByTestId('zoom-in'))
-
-    await waitFor(() => {
-      expect(getHeightPx('beta')).toBeGreaterThan(before)
-    })
+    expect(screen.getByTestId('current-entry-title')).toHaveTextContent('Beta')
+    expect(window.location.hash).toBe('#beta')
+    expect(screen.getByTestId('baseline-line')).toBeInTheDocument()
+    expect(screen.getByTestId('pokemon-label-beta')).toBeInTheDocument()
   })
 
-  it('updates source link when active pokemon changes via wheel', async () => {
+  it('does not render manual zoom controls', async () => {
     const user = userEvent.setup()
     render(<ScaleJourneyApp entries={testEntries} />)
 
     await user.click(screen.getByTestId('enter-button'))
-    fireEvent.wheel(window, { deltaY: 180 })
-
-    await waitFor(() => {
-      expect(screen.getByTestId('source-link')).toHaveAttribute(
-        'href',
-        'https://www.pokemon.com/us/pokedex/beta',
-      )
-    })
+    expect(screen.queryByTestId('zoom-in')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('zoom-slider')).not.toBeInTheDocument()
   })
 })
