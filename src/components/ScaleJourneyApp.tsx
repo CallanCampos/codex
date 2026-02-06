@@ -1,6 +1,11 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { clampIndex, findEntryIndexBySlug, getProgressPercent } from '../engine/scaleJourney'
+import {
+  clampIndex,
+  findEntryIndexBySlug,
+  getLogHeightNormalized,
+  getProgressPercent,
+} from '../engine/scaleJourney'
 import { useWebAudioScaffold } from '../hooks/useWebAudioScaffold'
 import { formatHeightDualUnits } from '../lib/height'
 import { clamp } from '../lib/scaleViewport'
@@ -11,9 +16,11 @@ interface ScaleJourneyAppProps {
   entries: Entry[]
 }
 
-const VISIBLE_WINDOW = 2
-const ACTIVE_HEIGHT_RATIO = 0.58
-const BASELINE_OFFSET_PX = 112
+const VISIBLE_WINDOW = 1
+const MIN_ACTIVE_HEIGHT_RATIO = 0.48
+const MAX_ACTIVE_HEIGHT_RATIO = 0.78
+const BASELINE_MIN_OFFSET_PX = 108
+const BASELINE_MAX_OFFSET_PX = 162
 const WHEEL_STEP_THRESHOLD = 140
 
 const getSlugFromHash = (): string => {
@@ -77,6 +84,9 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
 
   const minHeight = entries[0]?.heightMeters ?? 0.01
   const maxHeight = entries[entries.length - 1]?.heightMeters ?? 1
+  const activeHeightMeters = activeEntry?.heightMeters ?? minHeight
+  const normalizedScale = getLogHeightNormalized(activeHeightMeters, minHeight, maxHeight)
+  const scaleEase = 1 - (1 - normalizedScale) ** 1.4
 
   const visibleEntries = useMemo(() => {
     const start = Math.max(0, safeActiveIndex - VISIBLE_WINDOW)
@@ -178,7 +188,7 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
       }
 
       event.preventDefault()
-      wheelAccumulatorRef.current += event.deltaY
+      wheelAccumulatorRef.current += -event.deltaY
 
       const steps = Math.trunc(wheelAccumulatorRef.current / WHEEL_STEP_THRESHOLD)
       if (steps === 0) {
@@ -244,9 +254,20 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
     )
   }
 
-  const targetActiveHeightPx = stageSize.height * ACTIVE_HEIGHT_RATIO
+  const activeHeightRatio =
+    MIN_ACTIVE_HEIGHT_RATIO + (MAX_ACTIVE_HEIGHT_RATIO - MIN_ACTIVE_HEIGHT_RATIO) * scaleEase
+  const baselineOffsetPx = Math.round(
+    BASELINE_MIN_OFFSET_PX + (BASELINE_MAX_OFFSET_PX - BASELINE_MIN_OFFSET_PX) * scaleEase,
+  )
+  const perspectivePx = Math.round(clamp(1700 - scaleEase * 900, 760, 1700))
+  const targetActiveHeightPx = stageSize.height * activeHeightRatio
   const pixelsPerMeter = targetActiveHeightPx / Math.max(activeEntry.heightMeters, 0.01)
-  const slotWidthPx = clamp(stageSize.width * 0.34, 300, 560)
+  const slotWidthPx = clamp(stageSize.width * (0.62 + scaleEase * 0.6), 460, 1520)
+  const focusInfoBottom = clamp(
+    baselineOffsetPx + targetActiveHeightPx + 24,
+    185,
+    stageSize.height - 128,
+  )
 
   return (
     <main className="relative h-screen w-screen overflow-hidden text-slate-100">
@@ -265,7 +286,7 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
               Scroll to move through Pokemon from smallest to largest.
             </p>
             <p className="mb-8 text-slate-300">
-              The focused Pokemon is always centered and kept at a consistent screen size.
+              The camera pulls back as scale increases so each next Pokemon feels dramatically larger.
             </p>
             <button
               className="rounded-full border border-cyan-200/60 bg-cyan-300/20 px-8 py-3 text-lg font-medium text-cyan-100 transition hover:bg-cyan-300/30"
@@ -342,27 +363,53 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
         </div>
       </div>
 
-      <aside
-        className="absolute bottom-4 left-4 right-4 z-20 rounded-2xl border border-white/10 bg-slate-950/50 p-4 backdrop-blur md:bottom-auto md:left-auto md:right-6 md:top-1/2 md:w-[360px] md:-translate-y-1/2"
-        data-testid="active-description"
-      >
-        <p className="text-xs uppercase tracking-[0.2em] text-cyan-200/85">About {activeEntry.name}</p>
-        <p className="mt-2 text-sm leading-relaxed text-slate-200">{activeEntry.description}</p>
-        <a
-          className="mt-3 inline-flex rounded-full border border-cyan-200/45 px-3 py-1.5 text-xs text-cyan-100 hover:bg-cyan-300/20"
-          data-testid="source-link"
-          href={activeEntry.sourceUrl}
-          rel="noreferrer"
-          target="_blank"
-        >
-          Source
-        </a>
-      </aside>
-
       <div className="absolute inset-0 overflow-hidden" ref={stageRef}>
-        <div className="absolute inset-x-0 bottom-[112px] h-px bg-white/45" data-testid="baseline-line" />
+        <motion.div
+          animate={{ opacity: 0.16 + scaleEase * 0.22, scaleX: 0.96 + scaleEase * 0.36 }}
+          className="pointer-events-none absolute inset-x-[-14%] bottom-0 h-[45vh] origin-bottom rounded-[45%] bg-gradient-to-t from-black/40 via-slate-950/25 to-transparent blur-sm"
+          transition={{ duration: 0.45, ease: 'easeOut' }}
+        />
+        <div
+          className="absolute inset-x-0 h-px bg-white/45"
+          data-testid="baseline-line"
+          style={{ bottom: `${baselineOffsetPx}px` }}
+        />
 
-        <div className="absolute inset-x-0 bottom-0 top-24 overflow-hidden">
+        <motion.div
+          animate={{ bottom: focusInfoBottom }}
+          className="absolute left-1/2 z-20 w-[min(88vw,700px)] -translate-x-1/2 text-center"
+          data-testid="active-focus-meta"
+          transition={{ duration: 0.35, ease: 'easeOut' }}
+        >
+          <p
+            className="text-3xl font-bold leading-tight text-cyan-100 drop-shadow-[0_8px_20px_rgba(0,0,0,0.45)] md:text-5xl"
+            data-testid="active-focus-name"
+          >
+            {activeEntry.name}
+          </p>
+          <p
+            className="mx-auto mt-3 max-w-2xl text-sm leading-relaxed text-slate-100/95 md:text-base"
+            data-testid="active-description"
+          >
+            {activeEntry.description}
+          </p>
+          <a
+            className="mt-4 inline-flex rounded-full border border-cyan-200/45 px-4 py-1.5 text-xs text-cyan-100 hover:bg-cyan-300/20"
+            data-testid="source-link"
+            href={activeEntry.sourceUrl}
+            rel="noreferrer"
+            target="_blank"
+          >
+            Source
+          </a>
+        </motion.div>
+
+        <motion.div
+          animate={{ rotateX: -4 - scaleEase * 6, y: scaleEase * -16 }}
+          className="absolute inset-x-0 bottom-0 top-24 overflow-hidden"
+          style={{ perspective: `${perspectivePx}px`, transformOrigin: '50% 100%' }}
+          transition={{ duration: 0.45, ease: 'easeOut' }}
+        >
           <AnimatePresence initial={false}>
             {visibleEntries.map(({ entry, index }) => {
               const distance = index - safeActiveIndex
@@ -371,15 +418,17 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
               const heightPx = Math.max(1, entry.heightMeters * pixelsPerMeter)
               const opacity = index === safeActiveIndex ? 1 : clamp(0.54 - absoluteDistance * 0.18, 0.1, 0.6)
               const isActive = index === safeActiveIndex
+              const scale = isActive ? 1 : clamp(0.88 - absoluteDistance * 0.11, 0.58, 0.88)
+              const y = isActive ? 0 : 12 + absoluteDistance * 10
 
               return (
                 <motion.div
                   key={entry.id}
-                  animate={{ opacity, x, y: isActive ? 0 : 4 }}
+                  animate={{ opacity, scale, x, y }}
                   className="pointer-events-none absolute left-1/2"
                   exit={{ opacity: 0, y: 10 }}
                   initial={{ opacity: 0, y: 10 }}
-                  style={{ bottom: `${BASELINE_OFFSET_PX}px` }}
+                  style={{ bottom: `${baselineOffsetPx}px` }}
                   transition={{ damping: 28, mass: 0.75, stiffness: 210, type: 'spring' }}
                 >
                   <figure
@@ -390,7 +439,7 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
                     <motion.img
                       alt={entry.name}
                       animate={{ height: heightPx }}
-                      className={`w-auto max-w-[18vw] object-contain drop-shadow-[0_12px_20px_rgba(0,0,0,0.45)] ${
+                      className={`w-auto max-w-[22vw] object-contain drop-shadow-[0_12px_20px_rgba(0,0,0,0.45)] ${
                         isActive ? 'brightness-110' : 'brightness-90'
                       }`}
                       data-height-px={heightPx.toFixed(2)}
@@ -418,7 +467,7 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
                   animate={{ opacity, x }}
                   className="pointer-events-none absolute left-1/2"
                   initial={{ opacity: 0 }}
-                  style={{ bottom: '20px' }}
+                  style={{ bottom: '24px' }}
                   transition={{ damping: 28, mass: 0.75, stiffness: 210, type: 'spring' }}
                 >
                   <div
@@ -436,10 +485,10 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
               )
             })}
           </AnimatePresence>
-        </div>
+        </motion.div>
 
         <div className="pointer-events-none absolute bottom-2 left-0 right-0 text-center text-sm text-slate-300">
-          Scroll wheel: down = next, up = previous
+          Scroll wheel: up = next, down = previous
         </div>
       </div>
     </main>

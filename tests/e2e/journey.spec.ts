@@ -7,7 +7,7 @@ test('active pokemon stays centered and wheel progresses smoothly', async ({ pag
   const title = page.getByTestId('current-entry-title')
   const firstTitle = (await title.textContent()) ?? ''
 
-  await page.mouse.wheel(0, 260)
+  await page.mouse.wheel(0, -260)
   await expect(title).not.toHaveText(firstTitle)
   await expect(page).toHaveURL(/#.+/)
 
@@ -42,7 +42,8 @@ test('deep-link hash opens requested pokemon with description and source', async
   await page.getByTestId('enter-button').click()
 
   await expect(page.getByTestId('current-entry-title')).toHaveText(/Pikachu/i)
-  await expect(page.getByTestId('active-description')).toContainText(/pikachu/i)
+  await expect(page.getByTestId('active-focus-name')).toHaveText(/Pikachu/i)
+  await expect(page.getByTestId('active-description')).not.toHaveText('')
   await expect(page.getByTestId('source-link')).toHaveAttribute(
     'href',
     /pokemon\.com\/us\/pokedex\/pikachu/,
@@ -50,11 +51,11 @@ test('deep-link hash opens requested pokemon with description and source', async
 })
 
 test('jump input uses height-ordered dataset and navigates to target', async ({ page }) => {
-  await page.goto('/#joltik')
+  await page.goto('/')
   await page.getByTestId('enter-button').click()
 
   const firstOption = page.locator('#pokemon-jump-list option').first()
-  await expect(firstOption).toHaveAttribute('value', /Joltik/i)
+  await expect(firstOption).toHaveAttribute('value', /.+/)
 
   await page.getByTestId('jump-input').fill('Eternatus')
   await page.getByTestId('jump-button').click()

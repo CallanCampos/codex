@@ -66,7 +66,7 @@ describe('ScaleJourneyApp', () => {
     render(<ScaleJourneyApp entries={testEntries} />)
 
     await user.click(screen.getByTestId('enter-button'))
-    fireEvent.wheel(window, { deltaY: 220 })
+    fireEvent.wheel(window, { deltaY: -220 })
 
     await waitFor(() => {
       expect(screen.getByTestId('current-entry-title')).toHaveTextContent('Beta')
@@ -84,14 +84,16 @@ describe('ScaleJourneyApp', () => {
     render(<ScaleJourneyApp entries={testEntries} />)
 
     await user.click(screen.getByTestId('enter-button'))
+    expect(screen.getByTestId('active-focus-name')).toHaveTextContent('Alpha')
     expect(screen.getByTestId('active-description')).toHaveTextContent('Alpha description')
     expect(screen.getByTestId('source-link')).toHaveAttribute(
       'href',
       'https://www.pokemon.com/us/pokedex/alpha',
     )
 
-    fireEvent.wheel(window, { deltaY: 220 })
+    fireEvent.wheel(window, { deltaY: -220 })
     await waitFor(() => {
+      expect(screen.getByTestId('active-focus-name')).toHaveTextContent('Beta')
       expect(screen.getByTestId('active-description')).toHaveTextContent('Beta description')
     })
   })
@@ -140,5 +142,26 @@ describe('ScaleJourneyApp', () => {
     await user.click(screen.getByTestId('enter-button'))
     expect(screen.queryByTestId('zoom-in')).not.toBeInTheDocument()
     expect(screen.queryByTestId('zoom-slider')).not.toBeInTheDocument()
+  })
+
+  it('amplifies perceived scale as taller pokemon become active', async () => {
+    const user = userEvent.setup()
+    render(<ScaleJourneyApp entries={testEntries} />)
+
+    await user.click(screen.getByTestId('enter-button'))
+    const alphaActiveHeight = getHeightPx('alpha')
+
+    fireEvent.wheel(window, { deltaY: -220 })
+    await waitFor(() => {
+      expect(screen.getByTestId('current-entry-title')).toHaveTextContent('Beta')
+    })
+
+    fireEvent.wheel(window, { deltaY: -220 })
+    await waitFor(() => {
+      expect(screen.getByTestId('current-entry-title')).toHaveTextContent('Gamma')
+    })
+
+    const gammaActiveHeight = getHeightPx('gamma')
+    expect(gammaActiveHeight).toBeGreaterThan(alphaActiveHeight)
   })
 })
