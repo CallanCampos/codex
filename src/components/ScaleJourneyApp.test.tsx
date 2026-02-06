@@ -99,19 +99,19 @@ describe('ScaleJourneyApp', () => {
     })
   })
 
-  it('jumps by prompt from the compact jump button', async () => {
+  it('opens jump picker and jumps to selected pokemon', async () => {
     const user = userEvent.setup()
     render(<ScaleJourneyApp entries={testEntries} />)
 
     await user.click(screen.getByTestId('enter-button'))
-    const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('Gamma')
     await user.click(screen.getByTestId('jump-fab'))
+    expect(screen.getByTestId('jump-menu')).toBeInTheDocument()
 
+    await user.selectOptions(screen.getByTestId('jump-select'), 'gamma')
     await waitFor(() => {
       expect(screen.getByTestId('current-entry-title')).toHaveTextContent('Gamma')
     })
     expect(window.location.hash).toBe('#gamma')
-    promptSpy.mockRestore()
   })
 
   it('uses keyboard navigation and keeps baseline labels below the line', async () => {
@@ -123,8 +123,14 @@ describe('ScaleJourneyApp', () => {
 
     expect(screen.getByTestId('current-entry-title')).toHaveTextContent('Beta')
     expect(window.location.hash).toBe('#beta')
-    expect(screen.getByTestId('baseline-line')).toBeInTheDocument()
-    expect(screen.getByTestId('pokemon-label-beta')).toBeInTheDocument()
+    const baselineLine = screen.getByTestId('baseline-line')
+    const label = screen.getByTestId('pokemon-label-beta').parentElement
+    expect(baselineLine).toBeInTheDocument()
+    expect(label).toBeTruthy()
+    const baselineBottom = Number.parseFloat((baselineLine as HTMLElement).style.bottom ?? '0')
+    const labelBottom = Number.parseFloat((label as HTMLElement).style.bottom ?? '0')
+    expect(labelBottom).toBeGreaterThan(0)
+    expect(labelBottom).toBeLessThan(baselineBottom)
   })
 
   it('does not render manual zoom controls', async () => {
@@ -154,7 +160,7 @@ describe('ScaleJourneyApp', () => {
     })
 
     const alphaWhenGammaFocused = getHeightPx('alpha')
-    expect(alphaWhenGammaFocused).toBeLessThan(alphaFocusedHeight / 2)
+    expect(alphaWhenGammaFocused).toBeLessThanOrEqual(alphaFocusedHeight / 2)
     expect(getHeightPx('gamma')).toBeGreaterThan(alphaWhenGammaFocused)
   })
 

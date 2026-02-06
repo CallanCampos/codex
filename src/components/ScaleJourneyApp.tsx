@@ -19,8 +19,10 @@ const ACTIVE_HEIGHT_RATIO = 0.58
 const BASELINE_OFFSET_PX = 112
 const WHEEL_STEP_THRESHOLD = 140
 const ENTRY_WIDTH_FACTOR = 0.38
-const MIN_GAP_METERS = 0.2
-const MAX_GAP_METERS = 5
+const MIN_GAP_METERS = 0.9
+const MAX_GAP_METERS = 12
+const EDGE_FRAME_MARGIN_PX = 26
+const MIN_FIT_SCALE_FACTOR = 0.08
 
 const getSlugFromHash = (): string => {
   const hash = window.location.hash.replace(/^#/, '')
@@ -41,23 +43,6 @@ const readInitialIndex = (entries: Entry[]): number => {
   return index >= 0 ? index : 0
 }
 
-const normalizeQuery = (value: string): string => {
-  return value.trim().toLowerCase()
-}
-
-const findEntryByQuery = (entries: Entry[], query: string): Entry | undefined => {
-  const normalized = normalizeQuery(query)
-  if (!normalized) {
-    return undefined
-  }
-
-  return (
-    entries.find((entry) => entry.id === normalized) ??
-    entries.find((entry) => entry.name.toLowerCase() === normalized) ??
-    entries.find((entry) => entry.name.toLowerCase().includes(normalized))
-  )
-}
-
 const isFormControl = (target: EventTarget | null): boolean => {
   if (!(target instanceof HTMLElement)) {
     return false
@@ -70,6 +55,7 @@ const isFormControl = (target: EventTarget | null): boolean => {
 export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
   const [hasEntered, setHasEntered] = useState(false)
   const [activeIndex, setActiveIndex] = useState(() => readInitialIndex(entries))
+  const [isJumpMenuOpen, setIsJumpMenuOpen] = useState(false)
   const [stageSize, setStageSize] = useState({ height: 640, width: 1280 })
 
   const stageRef = useRef<HTMLDivElement | null>(null)
@@ -84,7 +70,6 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
   const maxHeight = entries[entries.length - 1]?.heightMeters ?? 1
   const activeHeightMeters = activeEntry?.heightMeters ?? minHeight
   const targetActiveHeightPx = stageSize.height * ACTIVE_HEIGHT_RATIO
-  const pixelsPerMeter = targetActiveHeightPx / Math.max(activeHeightMeters, 0.01)
   const baselineOffsetPx = clamp(BASELINE_OFFSET_PX, 88, stageSize.height * 0.28)
 
   const worldCenters = useMemo(() => {
@@ -99,7 +84,12 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
       const previousHalfWidth = previous.heightMeters * ENTRY_WIDTH_FACTOR * 0.5
       const currentHalfWidth = current.heightMeters * ENTRY_WIDTH_FACTOR * 0.5
       const averageHeight = (previous.heightMeters + current.heightMeters) * 0.5
-      const gapMeters = clamp(averageHeight * 0.1, MIN_GAP_METERS, MAX_GAP_METERS)
+      const heightDelta = Math.abs(current.heightMeters - previous.heightMeters)
+      const gapMeters = clamp(
+        averageHeight * 0.08 + heightDelta * 0.35 + 0.8,
+        MIN_GAP_METERS,
+        MAX_GAP_METERS,
+      )
 
       centers[index] = centers[index - 1] + previousHalfWidth + gapMeters + currentHalfWidth
     }
@@ -107,10 +97,33 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
     return centers
   }, [entries])
 
+  const preferredPixelsPerMeter = targetActiveHeightPx / Math.max(activeHeightMeters, 0.01)
+  const firstEntry = entries[0]
+  const lastEntry = entries[entries.length - 1]
+  const firstHalfWidth = (firstEntry?.heightMeters ?? 0) * ENTRY_WIDTH_FACTOR * 0.5
+  const lastHalfWidth = (lastEntry?.heightMeters ?? 0) * ENTRY_WIDTH_FACTOR * 0.5
+  const leftWorldX = (worldCenters[0] ?? 0) - firstHalfWidth
+  const rightWorldX = (worldCenters[worldCenters.length - 1] ?? 0) + lastHalfWidth
+  const activeWorldX = worldCenters[safeActiveIndex] ?? 0
+  const farthestDistanceMeters = Math.max(
+    activeWorldX - leftWorldX,
+    rightWorldX - activeWorldX,
+    0.01,
+  )
+  const fitAllPixelsPerMeter = Math.max(
+    (stageSize.width * 0.5 - EDGE_FRAME_MARGIN_PX) / farthestDistanceMeters,
+    0.0001,
+  )
+  const minReadablePixelsPerMeter = preferredPixelsPerMeter * MIN_FIT_SCALE_FACTOR
+  const pixelsPerMeter = Math.min(
+    preferredPixelsPerMeter,
+    Math.max(fitAllPixelsPerMeter, minReadablePixelsPerMeter),
+  )
+  const canFitAllInFrame = pixelsPerMeter <= fitAllPixelsPerMeter + 0.001
+
   const renderedEntries = useMemo(() => {
     const viewportHalf = stageSize.width * 0.5
     const overscanPx = stageSize.width * 0.2
-    const activeWorldX = worldCenters[safeActiveIndex] ?? 0
 
     return entries
       .map((entry, index) => {
@@ -121,7 +134,7 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
         const distancePx = Math.abs(x)
         const isVisible = distancePx - widthPx * 0.5 <= viewportHalf + overscanPx
         const isActive = index === safeActiveIndex
-        const opacity = isActive ? 1 : clamp(0.92 - distancePx / (stageSize.width * 1.2), 0.2, 0.86)
+        const opacity = isActive ? 1 : clamp(0.95 - distancePx / (stageSize.width * 1.28), 0.2, 0.88)
         const scale = isActive ? 1 : clamp(1 - distancePx / (stageSize.width * 3.4), 0.65, 0.98)
 
         return {
@@ -135,8 +148,8 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
           scale,
         }
       })
-      .filter((item) => item.isVisible)
-  }, [entries, pixelsPerMeter, safeActiveIndex, stageSize.width, worldCenters])
+      .filter((item) => canFitAllInFrame || item.isVisible)
+  }, [activeWorldX, canFitAllInFrame, entries, pixelsPerMeter, safeActiveIndex, stageSize.width, worldCenters])
 
   const progress = useMemo(() => {
     return getProgressPercent(safeActiveIndex, entries.length)
@@ -149,32 +162,20 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
     [entries.length],
   )
 
-  const jumpToQuery = useCallback(
-    (query: string) => {
-      const match = findEntryByQuery(entries, query)
-      if (!match) {
-        return false
-      }
+  const onJumpButtonClick = useCallback(() => {
+    setIsJumpMenuOpen((current) => !current)
+  }, [])
 
-      const index = findEntryIndexBySlug(entries, match.id)
+  const onJumpSelectionChange = useCallback(
+    (id: string) => {
+      const index = findEntryIndexBySlug(entries, id)
       if (index >= 0) {
         setActive(index)
-        return true
+        setIsJumpMenuOpen(false)
       }
-
-      return false
     },
     [entries, setActive],
   )
-
-  const onJumpClick = useCallback(() => {
-    const query = window.prompt('Jump to Pokemon by name or slug:')
-    if (!query) {
-      return
-    }
-
-    jumpToQuery(query)
-  }, [jumpToQuery])
 
   useEffect(() => {
     const previousBodyOverflow = document.body.style.overflow
@@ -311,8 +312,10 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
   }
 
   const perspectivePx = 1140
+  const activeHeightPx = Math.max(activeHeightMeters * pixelsPerMeter, 1)
   const focusBottomMax = Math.max(205, stageSize.height - 256)
-  const focusInfoBottom = clamp(baselineOffsetPx + targetActiveHeightPx + 18, 170, focusBottomMax)
+  const focusInfoBottom = clamp(baselineOffsetPx + activeHeightPx + 18, 170, focusBottomMax)
+  const labelBottomPx = Math.round(clamp(baselineOffsetPx * 0.52, 42, baselineOffsetPx - 18))
   const activeListPosition = safeActiveIndex + 1
 
   return (
@@ -379,14 +382,42 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
         </div>
       </div>
 
-      <button
-        className="absolute bottom-5 right-5 z-40 rounded-full border border-cyan-200/40 bg-slate-950/75 px-3 py-1.5 text-xs text-cyan-100 shadow-lg backdrop-blur hover:bg-cyan-300/20"
-        data-testid="jump-fab"
-        onClick={onJumpClick}
-        type="button"
-      >
-        Jump
-      </button>
+      <div className="absolute bottom-5 right-5 z-40 flex flex-col items-end gap-2">
+        <AnimatePresence>
+          {isJumpMenuOpen ? (
+            <motion.div
+              animate={{ opacity: 1, y: 0 }}
+              className="w-60 rounded-2xl border border-cyan-200/30 bg-slate-950/90 p-2 shadow-xl backdrop-blur"
+              data-testid="jump-menu"
+              exit={{ opacity: 0, y: 8 }}
+              initial={{ opacity: 0, y: 8 }}
+            >
+              <select
+                className="h-56 w-full rounded-xl border border-white/15 bg-slate-950/80 p-2 text-sm text-slate-100 outline-none"
+                data-testid="jump-select"
+                onChange={(event) => onJumpSelectionChange(event.target.value)}
+                size={10}
+                value={activeEntry.id}
+              >
+                {entries.map((entry, index) => (
+                  <option key={entry.id} value={entry.id}>
+                    {index + 1}. {entry.name} ({entry.heightMeters.toFixed(2)} m)
+                  </option>
+                ))}
+              </select>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+
+        <button
+          className="rounded-full border border-cyan-200/40 bg-slate-950/75 px-3 py-1.5 text-xs text-cyan-100 shadow-lg backdrop-blur hover:bg-cyan-300/20"
+          data-testid="jump-fab"
+          onClick={onJumpButtonClick}
+          type="button"
+        >
+          Jump
+        </button>
+      </div>
 
       <div className="absolute inset-0 overflow-hidden" ref={stageRef}>
         <motion.div
@@ -479,7 +510,7 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
                   animate={{ opacity, x }}
                   className="pointer-events-none absolute left-1/2"
                   initial={{ opacity: 0 }}
-                  style={{ bottom: '24px' }}
+                  style={{ bottom: `${labelBottomPx}px` }}
                   transition={{ damping: 28, mass: 0.75, stiffness: 210, type: 'spring' }}
                 >
                   <div

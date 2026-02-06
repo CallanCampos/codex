@@ -54,16 +54,13 @@ test('deep-link hash opens requested pokemon with description and source', async
   )
 })
 
-test('jump button prompt navigates to the requested pokemon', async ({ page }) => {
+test('jump button opens picker and navigates to selected pokemon', async ({ page }) => {
   await page.goto('/')
   await page.getByTestId('enter-button').click()
 
-  page.once('dialog', async (dialog) => {
-    expect(dialog.type()).toBe('prompt')
-    await dialog.accept('Charizard')
-  })
-
   await page.getByTestId('jump-fab').click()
+  await expect(page.getByTestId('jump-menu')).toBeVisible()
+  await page.getByTestId('jump-select').selectOption('charizard')
 
   await expect(page.getByTestId('current-entry-title')).toHaveText(/Charizard/i)
   await expect(page).toHaveURL(/#charizard/i)
