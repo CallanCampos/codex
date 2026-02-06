@@ -59,8 +59,44 @@ interface PokemonSpeciesResponse {
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const projectRoot = path.resolve(__dirname, '..')
 const outputFilePath = path.join(projectRoot, 'src', 'data', 'pokemon.sorted.json')
-const projectPokemonSvHomeBaseUrl =
-  'https://projectpokemon.org/images/sprites-models/sv-sprites-home'
+const projectPokemonFallbackModelUrl =
+  'https://projectpokemon.org/images/sprites-models/swsh-normal-sprites/pikachu.gif?fallback=1'
+
+const projectPokemonModelDocs = [
+  'https://projectpokemon.org/home/docs/spriteindex_148/3d-models-generation-1-pok%C3%A9mon-r90/',
+  'https://projectpokemon.org/home/docs/spriteindex_148/3d-models-generation-2-pok%C3%A9mon-r91/',
+  'https://projectpokemon.org/home/docs/spriteindex_148/3d-models-generation-3-pok%C3%A9mon-r92/',
+  'https://projectpokemon.org/home/docs/spriteindex_148/3d-models-generation-4-pok%C3%A9mon-r93/',
+  'https://projectpokemon.org/home/docs/spriteindex_148/3d-models-generation-5-pok%C3%A9mon-r94/',
+  'https://projectpokemon.org/home/docs/spriteindex_148/3d-models-generation-6-pok%C3%A9mon-r95/',
+  'https://projectpokemon.org/home/docs/spriteindex_148/3d-models-generation-7-pok%C3%A9mon-r96/',
+  'https://projectpokemon.org/home/docs/spriteindex_148/3d-models-generation-8-pok%C3%A9mon-r123/',
+] as const
+const projectPokemonModelUrlPattern =
+  /https:\/\/projectpokemon\.org\/images\/sprites-models\/(normal-back|swsh-normal-sprites)\/([a-z0-9-]+)\.gif/gi
+
+const projectPokemonSlugAliases: Record<string, string[]> = {
+  'chi-yu': ['chiyu'],
+  'chien-pao': ['chienpao'],
+  'hakamo-o': ['hakamoo'],
+  'ho-oh': ['hooh'],
+  'jangmo-o': ['jangmoo'],
+  'kommo-o': ['kommoo'],
+  'mime-jr': ['mimejr'],
+  'mr-mime': ['mrmime'],
+  'nidoran-f': ['nidoranf'],
+  'nidoran-m': ['nidoranm'],
+  'porygon-z': ['porygonz'],
+  'tapu-bulu': ['tapubulu'],
+  'tapu-fini': ['tapufini'],
+  'tapu-koko': ['tapukoko'],
+  'tapu-lele': ['tapulele'],
+  'type-null': ['typenull'],
+  'wo-chien': ['wochien'],
+}
+const projectPokemonManualModelOverrides: Record<string, string> = {
+  calyrex: 'https://projectpokemon.org/images/sprites-models/swsh-normal-sprites/calyrex.gif',
+}
 
 const DEFAULT_CONCURRENCY = 8
 const REQUEST_TIMEOUT_MS = 20000
@@ -82,9 +118,59 @@ const normalizeSlug = (slug: string): string => {
   return slug.toLowerCase().replace(/[^a-z0-9-]/g, '-')
 }
 
-const buildProjectPokemonModelUrl = (dexNumber: number): string => {
-  const dex = String(dexNumber).padStart(4, '0')
-  return `${projectPokemonSvHomeBaseUrl}/${dex}.png`
+const buildProjectPokemonModelCandidates = (slug: string): string[] => {
+  const candidates = new Set<string>()
+  candidates.add(slug)
+  candidates.add(slug.replace(/-/g, ''))
+  candidates.add(slug.replace(/[.'\u2019-]/g, ''))
+
+  const aliases = projectPokemonSlugAliases[slug]
+  if (aliases) {
+    for (const alias of aliases) {
+      candidates.add(alias)
+    }
+  }
+
+  return [...candidates]
+}
+
+const extractProjectPokemonModelIndex = (html: string): Map<string, string> => {
+  const map = new Map<string, string>()
+  let match: RegExpExecArray | null
+
+  while ((match = projectPokemonModelUrlPattern.exec(html)) !== null) {
+    const directory = match[1]
+    const slug = match[2]
+    const url = `https://projectpokemon.org/images/sprites-models/${directory}/${slug}.gif`
+    const existing = map.get(slug)
+
+    if (!existing || directory === 'normal-back') {
+      map.set(slug, url)
+    }
+  }
+
+  projectPokemonModelUrlPattern.lastIndex = 0
+  return map
+}
+
+const resolveProjectPokemonModelUrl = (
+  slug: string,
+  modelIndex: Map<string, string>,
+): string => {
+  const manualOverride = projectPokemonManualModelOverrides[slug]
+  if (manualOverride) {
+    return manualOverride
+  }
+
+  const candidates = buildProjectPokemonModelCandidates(slug)
+  for (const candidate of candidates) {
+    const hit = modelIndex.get(candidate)
+    if (hit) {
+      return hit
+    }
+  }
+
+  return projectPokemonFallbackModelUrl
 }
 
 const fetchJson = async <T>(url: string, retries = 3): Promise<T> => {
@@ -141,6 +227,82 @@ const fetchJson = async <T>(url: string, retries = 3): Promise<T> => {
   throw new Error(`Failed to fetch ${url}`)
 }
 
+const fetchText = async (url: string, retries = 3): Promise<string> => {
+  let attempt = 0
+
+  while (attempt <= retries) {
+    try {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => {
+        controller.abort()
+      }, REQUEST_TIMEOUT_MS)
+      let response: Response
+      try {
+        response = await fetch(url, {
+          signal: controller.signal,
+          headers: {
+            Accept: 'text/html,*/*;q=0.8',
+            'User-Agent': 'pokemon-size-journey-data-pipeline/1.0',
+          },
+        })
+      } finally {
+        clearTimeout(timeout)
+      }
+
+      if (!response.ok) {
+        const retryAfterHeader = response.headers.get('retry-after')
+        const retryAfterMs = retryAfterHeader
+          ? Number.parseInt(retryAfterHeader, 10) * 1000
+          : undefined
+        const error = new Error(`HTTP ${response.status} for ${url}`)
+        ;(error as Error & { retryAfterMs?: number }).retryAfterMs = retryAfterMs
+        throw error
+      }
+
+      return await response.text()
+    } catch (error) {
+      if (attempt === retries) {
+        throw error
+      }
+
+      const retryAfterMs =
+        typeof error === 'object' &&
+        error &&
+        'retryAfterMs' in error &&
+        typeof (error as { retryAfterMs?: number }).retryAfterMs === 'number'
+          ? (error as { retryAfterMs?: number }).retryAfterMs
+          : undefined
+      const delayMs = retryAfterMs ?? 600 * 2 ** attempt
+      await sleep(delayMs)
+      attempt += 1
+    }
+  }
+
+  throw new Error(`Failed to fetch ${url}`)
+}
+
+const fetchProjectPokemonModelIndex = async (): Promise<Map<string, string>> => {
+  const merged = new Map<string, string>()
+
+  for (const pageUrl of projectPokemonModelDocs) {
+    const html = await fetchText(pageUrl)
+    const pageIndex = extractProjectPokemonModelIndex(html)
+
+    for (const [slug, url] of pageIndex.entries()) {
+      const existing = merged.get(slug)
+      if (!existing || url.includes('/normal-back/')) {
+        merged.set(slug, url)
+      }
+    }
+  }
+
+  for (const [slug, url] of Object.entries(projectPokemonManualModelOverrides)) {
+    merged.set(slug, url)
+  }
+
+  return merged
+}
+
 const runWithConcurrency = async <TInput, TResult>(
   items: TInput[],
   concurrency: number,
@@ -184,6 +346,7 @@ const getEnglishFlavor = (species: PokemonSpeciesResponse): string => {
 
 const buildEntryFromDexNumber = async (
   dexNumber: number,
+  modelIndex: Map<string, string>,
 ): Promise<PokemonDatasetEntry> => {
   const [species, pokemon] = await Promise.all([
     fetchJson<PokemonSpeciesResponse>(
@@ -194,7 +357,7 @@ const buildEntryFromDexNumber = async (
 
   const slug = normalizeSlug(species.name)
   const cry = pokemon.cries.latest ?? pokemon.cries.legacy
-  const model = buildProjectPokemonModelUrl(dexNumber)
+  const model = resolveProjectPokemonModelUrl(slug, modelIndex)
 
   if (!cry) {
     throw new Error(`Missing cry URL for dex #${dexNumber}`)
@@ -226,6 +389,10 @@ const getSpeciesCount = async (): Promise<number> => {
 }
 
 const main = async (): Promise<void> => {
+  console.log('Fetching ProjectPokemon 3D model index...')
+  const modelIndex = await fetchProjectPokemonModelIndex()
+  console.log(`Indexed ${modelIndex.size} model assets from ProjectPokemon docs`)
+
   console.log('Fetching PokeAPI species count...')
   const speciesCount = await getSpeciesCount()
   console.log(`Building dataset for ${speciesCount} species...`)
@@ -238,7 +405,7 @@ const main = async (): Promise<void> => {
     dexNumbers,
     DEFAULT_CONCURRENCY,
     async (dexNumber, index) => {
-      const entry = await buildEntryFromDexNumber(dexNumber)
+      const entry = await buildEntryFromDexNumber(dexNumber, modelIndex)
       const processed = index + 1
 
       if (processed % 50 === 0 || processed === dexNumbers.length) {

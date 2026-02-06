@@ -1,13 +1,13 @@
 # Pokemon Size Journey
 
- Neal-style size exploration for Pokemon, powered by PokeAPI metadata and Project Pokemon model sprites, rendered as a static React app.
+ Neal-style size exploration for Pokemon, powered by PokeAPI metadata and Project Pokemon 3D-model renders, rendered as a static React app.
 
 ## Stack
 - React + TypeScript + Vite
 - Tailwind CSS
 - Framer Motion
 - Three.js + `@react-three/fiber` + `@react-three/drei` (scaffold only)
-- Web Audio API procedural soundtrack
+- Web Audio API layered soundtrack
 - Vitest + React Testing Library
 - Playwright (Chromium)
 
@@ -19,7 +19,7 @@
 - Jump-to-any-Pokemon search from anywhere in the journey
 - Hash deep links (`/#pikachu`)
 - Dynamic background blending by log(height)
-- Pokemon dataset pipeline from PokeAPI with Project Pokemon model sprite URLs
+- Pokemon dataset pipeline from PokeAPI with Project Pokemon 3D model GIF URLs
 - Layered background music that adds instruments as you progress
 
 ## Getting Started
@@ -59,8 +59,19 @@ pnpm dev
 ## Data Notes
 - Species count is fetched dynamically from PokeAPI at build time.
 - As of February 6, 2026, PokeAPI `pokemon-species` reports 1025 species.
-- Model images are sourced from Project Pokemon (`sprites-models/sv-sprites-home/{dex}.png`).
+- Model images are sourced from Project Pokemon 3D model pages (`normal-back/*.gif` and `swsh-normal-sprites/*.gif`).
+- If a species does not have a listed 3D model asset, the build marks a fallback model URL and the representative selector skips that unresolved height entry.
 - Output is sorted from smallest to largest by `heightMeters`.
+
+## Audio Stems (Optional)
+To use your own licensed Pokemon-compatible layered music, place stems in `public/audio/`:
+- `pokemon-layer-1.ogg`
+- `pokemon-layer-2.ogg`
+- `pokemon-layer-3.ogg`
+- `pokemon-layer-4.ogg`
+- `pokemon-layer-5.ogg`
+
+If those files are absent, the app uses the built-in synthesized fallback track.
 
 ## Deploy (GitHub Pages)
 A workflow is included at `.github/workflows/deploy-pages.yml`.

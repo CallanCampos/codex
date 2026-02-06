@@ -43,4 +43,28 @@ describe('selectRepresentativePokemonByHeight', () => {
     const result = selectRepresentativePokemonByHeight(input)
     expect(result.map((entry) => entry.heightMeters)).toEqual([0.4, 1.7, 2.2])
   })
+
+  it('skips heights where only unresolved fallback models exist', () => {
+    const input: PokemonDatasetEntry[] = [
+      base({
+        dexNumber: 1000,
+        slug: 'missing-model',
+        name: 'Missing Model',
+        heightMeters: 2.9,
+        model:
+          'https://projectpokemon.org/images/sprites-models/swsh-normal-sprites/pikachu.gif?fallback=1',
+      }),
+      base({
+        dexNumber: 25,
+        slug: 'pikachu',
+        name: 'Pikachu',
+        heightMeters: 0.4,
+        model: 'https://projectpokemon.org/images/sprites-models/normal-back/pikachu.gif',
+      }),
+    ]
+
+    const result = selectRepresentativePokemonByHeight(input)
+    expect(result.map((entry) => entry.heightMeters)).toEqual([0.4])
+    expect(result[0].slug).toBe('pikachu')
+  })
 })

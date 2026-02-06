@@ -22,6 +22,8 @@ interface JourneyAudioRuntime {
   nextStepTime: number
   schedulerId: number | null
   stepIndex: number
+  externalStemState: 'unknown' | 'available' | 'missing'
+  externalStemSources: AudioBufferSourceNode[]
 }
 
 const MASTER_GAIN_DEFAULT = 0.22
@@ -29,6 +31,7 @@ const LAYER_BASE_GAINS = [0.24, 0.2, 0.16, 0.15, 0.2]
 const LOOP_STEPS = 16
 const SCHEDULER_LOOKAHEAD_MS = 32
 const SCHEDULE_AHEAD_SECONDS = 0.18
+const EXTERNAL_STEM_COUNT = 5
 
 const MELODY_PATTERN: Array<number | null> = [
   76,
@@ -299,6 +302,49 @@ const scheduleStep = (
   }
 }
 
+const loadExternalStemBuffers = async (
+  context: AudioContext,
+): Promise<AudioBuffer[] | null> => {
+  const paths = Array.from(
+    { length: EXTERNAL_STEM_COUNT },
+    (_, index) => `/audio/pokemon-layer-${index + 1}.ogg`,
+  )
+
+  try {
+    const responses = await Promise.all(paths.map((path) => fetch(path)))
+    if (responses.some((response) => !response.ok)) {
+      return null
+    }
+
+    const arrayBuffers = await Promise.all(responses.map((response) => response.arrayBuffer()))
+    const decoded = await Promise.all(
+      arrayBuffers.map(async (arrayBuffer) => {
+        return await context.decodeAudioData(arrayBuffer.slice(0))
+      }),
+    )
+
+    return decoded
+  } catch {
+    return null
+  }
+}
+
+const startExternalStemPlayback = (
+  runtime: JourneyAudioRuntime,
+  buffers: AudioBuffer[],
+): AudioBufferSourceNode[] => {
+  const startAt = runtime.context.currentTime + 0.05
+
+  return buffers.map((buffer, index) => {
+    const source = runtime.context.createBufferSource()
+    source.buffer = buffer
+    source.loop = true
+    source.connect(runtime.layerGains[index])
+    source.start(startAt)
+    return source
+  })
+}
+
 export const useWebAudioScaffold = (): WebAudioScaffold => {
   const runtimeRef = useRef<JourneyAudioRuntime | null>(null)
   const progressRef = useRef(0)
@@ -378,6 +424,8 @@ export const useWebAudioScaffold = (): WebAudioScaffold => {
 
       runtimeRef.current = {
         context,
+        externalStemSources: [],
+        externalStemState: 'unknown',
         layerGains,
         masterGain,
         noiseBuffer: createNoiseBuffer(context),
@@ -396,7 +444,28 @@ export const useWebAudioScaffold = (): WebAudioScaffold => {
       await runtime.context.resume()
     }
 
-    startScheduler(runtime)
+    if (runtime.externalStemState === 'unknown') {
+      const stemBuffers = await loadExternalStemBuffers(runtime.context)
+      if (stemBuffers && stemBuffers.length === EXTERNAL_STEM_COUNT) {
+        runtime.externalStemSources = startExternalStemPlayback(runtime, stemBuffers)
+        runtime.externalStemState = 'available'
+      } else {
+        runtime.externalStemState = 'missing'
+      }
+    } else if (
+      runtime.externalStemState === 'available' &&
+      runtime.externalStemSources.length === 0
+    ) {
+      const stemBuffers = await loadExternalStemBuffers(runtime.context)
+      if (stemBuffers && stemBuffers.length === EXTERNAL_STEM_COUNT) {
+        runtime.externalStemSources = startExternalStemPlayback(runtime, stemBuffers)
+      }
+    }
+
+    if (runtime.externalStemState !== 'available') {
+      startScheduler(runtime)
+    }
+
     applyLayerMix(progressRef.current)
   }, [applyLayerMix, isSupported, startScheduler])
 
@@ -430,6 +499,15 @@ export const useWebAudioScaffold = (): WebAudioScaffold => {
 
       if (runtime.schedulerId !== null) {
         window.clearInterval(runtime.schedulerId)
+      }
+
+      for (const source of runtime.externalStemSources) {
+        try {
+          source.stop()
+        } catch {
+          // No-op: source may already be stopped.
+        }
+        source.disconnect()
       }
 
       runtimeRef.current = null
