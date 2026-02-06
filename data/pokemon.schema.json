@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/pokemon.schema.json",
+  "title": "Pokemon Dataset",
+  "type": "array",
+  "minItems": 1,
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "dexNumber",
+      "slug",
+      "name",
+      "heightMeters",
+      "weightKg",
+      "description",
+      "sourceUrl",
+      "cry",
+      "model"
+    ],
+    "properties": {
+      "dexNumber": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "slug": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[a-z0-9-]+$"
+      },
+      "name": {
+        "type": "string",
+        "minLength": 1
+      },
+      "heightMeters": {
+        "type": "number",
+        "exclusiveMinimum": 0
+      },
+      "weightKg": {
+        "type": "number",
+        "exclusiveMinimum": 0
+      },
+      "description": {
+        "type": "string",
+        "minLength": 1
+      },
+      "sourceUrl": {
+        "type": "string",
+        "format": "uri",
+        "pattern": "^https://www\\.pokemon\\.com/us/pokedex/"
+      },
+      "cry": {
+        "type": "string",
+        "format": "uri"
+      },
+      "model": {
+        "type": "string",
+        "format": "uri"
+      }
+    }
+  }
+}
