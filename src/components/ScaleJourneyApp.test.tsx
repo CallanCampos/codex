@@ -56,6 +56,10 @@ const getHeightPx = (id: string): number => {
   return Number.parseFloat(el?.getAttribute('data-height-px') ?? '0')
 }
 
+const makeTouch = (clientX: number, clientY: number): Touch => {
+  return { clientX, clientY } as Touch
+}
+
 describe('ScaleJourneyApp', () => {
   beforeEach(() => {
     window.history.replaceState(null, '', '#alpha')
@@ -89,6 +93,32 @@ describe('ScaleJourneyApp', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('current-entry-title')).toHaveTextContent('Beta')
+    })
+  })
+
+  it('navigates on a single vertical swipe for mobile browsers', async () => {
+    const user = userEvent.setup()
+    render(<ScaleJourneyApp entries={testEntries} />)
+
+    await user.click(screen.getByTestId('enter-button'))
+    fireEvent.touchStart(window, { touches: [makeTouch(120, 320)] })
+    fireEvent.touchMove(window, { touches: [makeTouch(120, 236)] })
+    fireEvent.touchEnd(window, { changedTouches: [makeTouch(120, 224)] })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('current-entry-title')).toHaveTextContent('Beta')
+    })
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 240)
+    })
+
+    fireEvent.touchStart(window, { touches: [makeTouch(120, 212)] })
+    fireEvent.touchMove(window, { touches: [makeTouch(120, 294)] })
+    fireEvent.touchEnd(window, { changedTouches: [makeTouch(120, 308)] })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('current-entry-title')).toHaveTextContent('Alpha')
     })
   })
 

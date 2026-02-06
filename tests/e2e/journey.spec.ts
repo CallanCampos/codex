@@ -102,3 +102,58 @@ test('viewport remains full-screen without page scrollbars', async ({ page }) =>
   expect(viewportCheck.hasVerticalOverflow).toBe(false)
   expect(viewportCheck.hasHorizontalOverflow).toBe(false)
 })
+
+test.describe('mobile swipe navigation', () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { height: 844, width: 390 } })
+
+  test('swiping up and down moves exactly one pokemon per gesture', async ({ page }) => {
+    await page.goto('/')
+    await page.getByTestId('enter-button').click()
+    await expect(page.getByTestId('list-counter')).toContainText('1 of')
+
+    await page.evaluate(() => {
+      const start = new Event('touchstart', { bubbles: true, cancelable: true })
+      Object.defineProperty(start, 'touches', {
+        value: [{ clientX: 180, clientY: 620 }],
+      })
+      window.dispatchEvent(start)
+
+      const move = new Event('touchmove', { bubbles: true, cancelable: true })
+      Object.defineProperty(move, 'touches', {
+        value: [{ clientX: 180, clientY: 520 }],
+      })
+      window.dispatchEvent(move)
+
+      const end = new Event('touchend', { bubbles: true, cancelable: true })
+      Object.defineProperty(end, 'changedTouches', {
+        value: [{ clientX: 180, clientY: 500 }],
+      })
+      window.dispatchEvent(end)
+    })
+
+    await expect(page.getByTestId('list-counter')).toContainText('2 of')
+
+    await page.waitForTimeout(260)
+    await page.evaluate(() => {
+      const start = new Event('touchstart', { bubbles: true, cancelable: true })
+      Object.defineProperty(start, 'touches', {
+        value: [{ clientX: 180, clientY: 440 }],
+      })
+      window.dispatchEvent(start)
+
+      const move = new Event('touchmove', { bubbles: true, cancelable: true })
+      Object.defineProperty(move, 'touches', {
+        value: [{ clientX: 180, clientY: 560 }],
+      })
+      window.dispatchEvent(move)
+
+      const end = new Event('touchend', { bubbles: true, cancelable: true })
+      Object.defineProperty(end, 'changedTouches', {
+        value: [{ clientX: 180, clientY: 588 }],
+      })
+      window.dispatchEvent(end)
+    })
+
+    await expect(page.getByTestId('list-counter')).toContainText('1 of')
+  })
+})

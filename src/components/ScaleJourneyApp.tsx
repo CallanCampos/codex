@@ -38,6 +38,9 @@ interface ModelFallbackBoundaryState {
 const ACTIVE_HEIGHT_RATIO = 0.58
 const BASELINE_OFFSET_PX = 112
 const WHEEL_NAV_LOCK_MS = 180
+const TOUCH_NAV_LOCK_MS = 220
+const TOUCH_NAV_MIN_DELTA_PX = 28
+const TOUCH_NAV_MAX_HORIZONTAL_PX = 84
 const ENTRY_WIDTH_FACTOR = 0.5
 const MIN_GAP_METERS = 0.46
 const MAX_GAP_METERS = 24
@@ -148,6 +151,8 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
 
   const stageRef = useRef<HTMLDivElement | null>(null)
   const lastWheelNavigateAtRef = useRef(0)
+  const lastTouchNavigateAtRef = useRef(0)
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null)
   const cryAudioRef = useRef<HTMLAudioElement | null>(null)
 
   const { resume, isSupported: isAudioSupported, setMasterVolume, setProgress } =
@@ -406,6 +411,94 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
   }, [entries.length, hasEntered])
 
   useEffect(() => {
+    if (!hasEntered) {
+      return
+    }
+
+    const onTouchStart = (event: TouchEvent) => {
+      if (isFormControl(event.target)) {
+        touchStartRef.current = null
+        return
+      }
+
+      const firstTouch = event.touches[0]
+      if (!firstTouch) {
+        touchStartRef.current = null
+        return
+      }
+
+      touchStartRef.current = {
+        x: firstTouch.clientX,
+        y: firstTouch.clientY,
+      }
+    }
+
+    const onTouchMove = (event: TouchEvent) => {
+      if (!touchStartRef.current) {
+        return
+      }
+
+      if (event.touches.length !== 1) {
+        touchStartRef.current = null
+        return
+      }
+
+      event.preventDefault()
+    }
+
+    const onTouchEnd = (event: TouchEvent) => {
+      const touchStart = touchStartRef.current
+      touchStartRef.current = null
+      if (!touchStart) {
+        return
+      }
+
+      const finalTouch = event.changedTouches[0]
+      if (!finalTouch) {
+        return
+      }
+
+      const deltaY = finalTouch.clientY - touchStart.y
+      const deltaX = finalTouch.clientX - touchStart.x
+      const absDeltaY = Math.abs(deltaY)
+
+      if (absDeltaY < TOUCH_NAV_MIN_DELTA_PX) {
+        return
+      }
+
+      if (Math.abs(deltaX) > TOUCH_NAV_MAX_HORIZONTAL_PX && Math.abs(deltaX) > absDeltaY) {
+        return
+      }
+
+      const now = performance.now()
+      if (now - lastTouchNavigateAtRef.current < TOUCH_NAV_LOCK_MS) {
+        return
+      }
+
+      const direction = deltaY < 0 ? 1 : -1
+      setActiveIndex((current) => clampIndex(current + direction, entries.length))
+      lastTouchNavigateAtRef.current = now
+      event.preventDefault()
+    }
+
+    const onTouchCancel = () => {
+      touchStartRef.current = null
+    }
+
+    window.addEventListener('touchstart', onTouchStart, { passive: false })
+    window.addEventListener('touchmove', onTouchMove, { passive: false })
+    window.addEventListener('touchend', onTouchEnd, { passive: false })
+    window.addEventListener('touchcancel', onTouchCancel)
+
+    return () => {
+      window.removeEventListener('touchstart', onTouchStart)
+      window.removeEventListener('touchmove', onTouchMove)
+      window.removeEventListener('touchend', onTouchEnd)
+      window.removeEventListener('touchcancel', onTouchCancel)
+    }
+  }, [entries.length, hasEntered])
+
+  useEffect(() => {
     if (!activeEntry) {
       return
     }
@@ -461,7 +554,7 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
 
   if (!activeEntry) {
     return (
-      <main className="flex h-screen w-screen items-center justify-center overflow-hidden text-white">
+      <main className="flex h-[100dvh] w-screen items-center justify-center overflow-hidden text-white">
         <p>No Pokemon data loaded.</p>
       </main>
     )
@@ -475,7 +568,7 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
   const activeListPosition = safeActiveIndex + 1
 
   return (
-    <main className="relative h-screen w-screen overflow-hidden text-slate-100">
+    <main className="relative h-[100dvh] w-screen overflow-hidden text-slate-100 touch-none">
       <BackgroundSystem
         currentHeight={activeEntry.heightMeters}
         maxHeight={maxHeight}
@@ -511,7 +604,10 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
         </div>
       ) : null}
 
-      <div className="absolute inset-x-0 top-0 z-30 bg-gradient-to-b from-slate-950/70 to-transparent">
+      <div
+        className="absolute inset-x-0 top-0 z-30 bg-gradient-to-b from-slate-950/70 to-transparent"
+        style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
+      >
         <div className="flex w-full flex-wrap items-center gap-3 px-4 py-3">
           <div className="min-w-[180px]">
             <p className="text-xs uppercase tracking-[0.25em] text-cyan-200/90">Current Pokemon</p>
@@ -549,7 +645,13 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
         </div>
       </div>
 
-      <div className="absolute bottom-5 right-5 z-40 flex flex-col items-end gap-2">
+      <div
+        className="absolute z-40 flex flex-col items-end gap-2"
+        style={{
+          bottom: 'calc(env(safe-area-inset-bottom, 0px) + 20px)',
+          right: 'calc(env(safe-area-inset-right, 0px) + 20px)',
+        }}
+      >
         <AnimatePresence>
           {isJumpMenuOpen ? (
             <motion.div
@@ -757,8 +859,11 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
           </AnimatePresence>
         </motion.div>
 
-        <div className="pointer-events-none absolute bottom-2 left-0 right-0 text-center text-sm text-slate-300">
-          Scroll wheel: up = next, down = previous
+        <div
+          className="pointer-events-none absolute left-0 right-0 text-center text-sm text-slate-300"
+          style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 8px)' }}
+        >
+          Scroll or swipe: up = next, down = previous
         </div>
       </div>
     </main>

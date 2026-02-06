@@ -75,7 +75,7 @@ const ModelMesh = ({ scene }: ModelMeshProps) => {
   }, [scene])
 
   return (
-    <group position={normalized.position} rotation={[0, 0, 0]} scale={normalized.scale}>
+    <group position={normalized.position} rotation={[0, Math.PI, 0]} scale={normalized.scale}>
       <primitive object={normalized.root} />
     </group>
   )
@@ -92,7 +92,6 @@ const GlbModelMesh = ({ modelUrl }: PokemonModelCanvasProps) => {
 const DaeModelMesh = ({ modelUrl }: PokemonModelCanvasProps) => {
   const collada = useLoader(ColladaLoader, modelUrl, (loader) => {
     const resourceDirectory = getResourceDirectory(modelUrl)
-    loader.setPath(resourceDirectory)
     loader.setResourcePath(resourceDirectory)
   })
   return <ModelMesh scene={collada.scene} />
@@ -101,7 +100,6 @@ const DaeModelMesh = ({ modelUrl }: PokemonModelCanvasProps) => {
 const FbxModelMesh = ({ modelUrl }: PokemonModelCanvasProps) => {
   const fbx = useLoader(FBXLoader, modelUrl, (loader) => {
     const resourceDirectory = getResourceDirectory(modelUrl)
-    loader.setPath(resourceDirectory)
     loader.setResourcePath(resourceDirectory)
   })
   return <ModelMesh scene={fbx} />
