@@ -28,6 +28,7 @@ interface ScaleJourneyAppProps {
 interface ModelFallbackBoundaryProps {
   children: ReactNode
   fallback: ReactNode
+  resetKey: string
 }
 
 interface ModelFallbackBoundaryState {
@@ -62,6 +63,17 @@ class ModelFallbackBoundary extends Component<
   public static getDerivedStateFromError(): ModelFallbackBoundaryState {
     return {
       hasError: true,
+    }
+  }
+
+  public override componentDidUpdate(previousProps: ModelFallbackBoundaryProps) {
+    if (
+      this.state.hasError &&
+      previousProps.resetKey !== this.props.resetKey
+    ) {
+      this.setState({
+        hasError: false,
+      })
     }
   }
 
@@ -236,6 +248,17 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
   const progress = useMemo(() => {
     return getProgressPercent(safeActiveIndex, entries.length)
   }, [safeActiveIndex, entries.length])
+
+  const activeRenderedEntry = useMemo(() => {
+    return renderedEntries.find((item) => item.isActive) ?? null
+  }, [renderedEntries])
+
+  const activeModelUrl =
+    canRender3dModels && activeEntry?.assets.model3dUrl ? activeEntry.assets.model3dUrl : undefined
+  const activeModelHeightPx = activeRenderedEntry?.heightPx ?? 0
+  const activeModelWidthPx = activeRenderedEntry
+    ? Math.max(activeRenderedEntry.widthPx * 1.55, activeRenderedEntry.heightPx * 0.72, 84)
+    : 0
 
   useEffect(() => {
     if (!hasEntered) {
@@ -612,8 +635,7 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
         >
           <AnimatePresence initial={false}>
             {renderedEntries.map(({ entry, isActive, x, heightPx, opacity, scale, widthPx }) => {
-              const renderModel = canRender3dModels && isActive && Boolean(entry.assets.model3dUrl)
-              const modelWidthPx = Math.max(widthPx * 1.55, heightPx * 0.72, 84)
+              const useModelOverlay = Boolean(isActive && activeModelUrl)
 
               return (
                 <motion.div
@@ -633,39 +655,13 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
                       playCry(entry.assets.cryUrl)
                     }}
                   >
-                    {renderModel ? (
+                    {useModelOverlay ? (
                       <motion.div
-                        animate={{ height: heightPx, width: modelWidthPx }}
-                        className="drop-shadow-[0_12px_20px_rgba(0,0,0,0.42)]"
+                        animate={{ height: heightPx, width: widthPx }}
+                        className="opacity-0"
                         data-height-px={heightPx.toFixed(2)}
-                        data-testid={`pokemon-model-${entry.id}`}
                         transition={{ duration: 0.48, ease: 'easeOut' }}
-                      >
-                        <ModelFallbackBoundary
-                          key={entry.assets.model3dUrl}
-                          fallback={
-                            <img
-                              alt={entry.name}
-                              className="h-full w-auto max-w-none object-contain"
-                              loading={isActive ? 'eager' : 'lazy'}
-                              src={entry.assets.imageUrl}
-                            />
-                          }
-                        >
-                          <Suspense
-                            fallback={
-                              <img
-                                alt={entry.name}
-                                className="h-full w-auto max-w-none object-contain"
-                                loading={isActive ? 'eager' : 'lazy'}
-                                src={entry.assets.imageUrl}
-                              />
-                            }
-                          >
-                            <LazyPokemonModelCanvas modelUrl={entry.assets.model3dUrl ?? ''} />
-                          </Suspense>
-                        </ModelFallbackBoundary>
-                      </motion.div>
+                      />
                     ) : (
                       <motion.img
                         alt={entry.name}
@@ -684,6 +680,53 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
               )
             })}
           </AnimatePresence>
+
+          {activeModelUrl && activeEntry && activeRenderedEntry ? (
+            <motion.div
+              animate={{
+                opacity: activeRenderedEntry.opacity,
+                scale: activeRenderedEntry.scale,
+                x: activeRenderedEntry.x,
+                y: 0,
+              }}
+              className="pointer-events-none absolute left-1/2"
+              style={{ bottom: `${baselineOffsetPx}px` }}
+              transition={{ damping: 28, mass: 0.75, stiffness: 210, type: 'spring' }}
+            >
+              <motion.div
+                animate={{ height: activeModelHeightPx, width: activeModelWidthPx }}
+                className="-translate-x-1/2 drop-shadow-[0_12px_20px_rgba(0,0,0,0.42)]"
+                data-height-px={activeModelHeightPx.toFixed(2)}
+                data-testid={`pokemon-model-${activeEntry.id}`}
+                transition={{ duration: 0.48, ease: 'easeOut' }}
+              >
+                <ModelFallbackBoundary
+                  fallback={
+                    <img
+                      alt={activeEntry.name}
+                      className="h-full w-auto max-w-none object-contain"
+                      loading="eager"
+                      src={activeEntry.assets.imageUrl}
+                    />
+                  }
+                  resetKey={activeModelUrl}
+                >
+                  <Suspense
+                    fallback={
+                      <img
+                        alt={activeEntry.name}
+                        className="h-full w-auto max-w-none object-contain"
+                        loading="eager"
+                        src={activeEntry.assets.imageUrl}
+                      />
+                    }
+                  >
+                    <LazyPokemonModelCanvas modelUrl={activeModelUrl} />
+                  </Suspense>
+                </ModelFallbackBoundary>
+              </motion.div>
+            </motion.div>
+          ) : null}
 
           <AnimatePresence initial={false}>
             {renderedEntries.map(({ entry, isActive, x, opacity }) => {

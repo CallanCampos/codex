@@ -14,6 +14,16 @@ interface ModelMeshProps {
   scene: THREE.Object3D
 }
 
+const getResourceDirectory = (url: string): string => {
+  const withoutQuery = url.split('?')[0] ?? url
+  const lastSlashIndex = withoutQuery.lastIndexOf('/')
+  if (lastSlashIndex < 0) {
+    return ''
+  }
+
+  return withoutQuery.slice(0, lastSlashIndex + 1)
+}
+
 const applyMaterialTweaks = (root: THREE.Object3D): void => {
   root.traverse((node) => {
     const mesh = node as THREE.Mesh
@@ -65,24 +75,35 @@ const ModelMesh = ({ scene }: ModelMeshProps) => {
   }, [scene])
 
   return (
-    <group position={normalized.position} rotation={[0, Math.PI, 0]} scale={normalized.scale}>
+    <group position={normalized.position} rotation={[0, 0, 0]} scale={normalized.scale}>
       <primitive object={normalized.root} />
     </group>
   )
 }
 
 const GlbModelMesh = ({ modelUrl }: PokemonModelCanvasProps) => {
-  const gltf = useLoader(GLTFLoader, modelUrl)
+  const gltf = useLoader(GLTFLoader, modelUrl, (loader) => {
+    const resourceDirectory = getResourceDirectory(modelUrl)
+    loader.setResourcePath(resourceDirectory)
+  })
   return <ModelMesh scene={gltf.scene} />
 }
 
 const DaeModelMesh = ({ modelUrl }: PokemonModelCanvasProps) => {
-  const collada = useLoader(ColladaLoader, modelUrl)
+  const collada = useLoader(ColladaLoader, modelUrl, (loader) => {
+    const resourceDirectory = getResourceDirectory(modelUrl)
+    loader.setPath(resourceDirectory)
+    loader.setResourcePath(resourceDirectory)
+  })
   return <ModelMesh scene={collada.scene} />
 }
 
 const FbxModelMesh = ({ modelUrl }: PokemonModelCanvasProps) => {
-  const fbx = useLoader(FBXLoader, modelUrl)
+  const fbx = useLoader(FBXLoader, modelUrl, (loader) => {
+    const resourceDirectory = getResourceDirectory(modelUrl)
+    loader.setPath(resourceDirectory)
+    loader.setResourcePath(resourceDirectory)
+  })
   return <ModelMesh scene={fbx} />
 }
 
