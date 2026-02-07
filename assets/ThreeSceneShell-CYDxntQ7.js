@@ -1,0 +1,1 @@
+import{j as e}from"./index-BOQkh8rq.js";import{C as t}from"./react-three-fiber.esm-DdMB5BAl.js";const s=()=>e.jsx("div",{"aria-hidden":"true",className:"pointer-events-none fixed inset-0 -z-10 opacity-0","data-testid":"three-scaffold",children:e.jsx(t,{children:e.jsx("ambientLight",{intensity:.3})})});export{s as ThreeSceneShell};
