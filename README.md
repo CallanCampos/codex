@@ -1,6 +1,6 @@
 # Pokemon Size Journey
 
- Neal-style size exploration for Pokemon, powered by PokeAPI metadata and local 3D model packs from The Models Resource, rendered as a static React app.
+ Neal-style size exploration for Pokemon, powered by PokeAPI metadata and Project Pokemon model-render assets, rendered as a static React app.
 
 ## Stack
 - React + TypeScript + Vite
@@ -19,8 +19,8 @@
 - Jump-to-any-Pokemon search from anywhere in the journey
 - Hash deep links (`/#pikachu`)
 - Dynamic background blending by log(height)
-- Pokemon dataset pipeline from PokeAPI plus local model extraction from `models.spriters-resource.com/3ds/pokemonxy`
-- Automatic fallback to front-facing art when a local 3D model is unavailable
+- Pokemon dataset pipeline from PokeAPI plus Project Pokemon model URL mapping for the full Pokedex
+- Automatic fallback between image-backed and mesh-backed model rendering paths
 - Layered background music that adds instruments as you progress
 - Click any visible Pokemon to play its cry
 - In-app music mute/unmute control
@@ -63,13 +63,13 @@ pnpm dev
 - `pnpm test:e2e` - run Playwright E2E (includes dataset build)
 - `pnpm data:build` - fetch and generate `src/data/pokemon.sorted.json`
 - `pnpm data:validate` - validate dataset against schema
-- `pnpm models:build` - download/extract representative Pokemon model packs into `public/models/xy` and generate `src/data/pokemon.models3d.json`
+- `pnpm models:build` - generate full Project Pokemon model mapping in `src/data/pokemon.models3d.json`
 
 ## Data Notes
 - Species count is fetched dynamically from PokeAPI at build time.
 - As of February 6, 2026, PokeAPI `pokemon-species` reports 1025 species.
-- 3D assets are pulled from The Models Resource Pokemon XY section.
-- Model mapping is generated in `src/data/pokemon.models3d.json`; entries without a sourced model automatically use front-facing HOME artwork.
+- Model assets are sourced from Project Pokemon (`images/sprites-models/sv-sprites-home`).
+- Model mapping is generated in `src/data/pokemon.models3d.json` for all species in the dataset.
 - Output is sorted from smallest to largest by `heightMeters`.
 
 ## Audio Stems (Optional)

@@ -10,8 +10,8 @@ This project emulates the `neal.fun/size-of-life` interaction model with a Pokem
 
 ## Data Pipeline
 Data is generated from PokeAPI into `src/data/pokemon.sorted.json`. Visual assets are resolved in two layers:
-- Primary: local extracted 3D models from The Models Resource Pokemon XY archives (`public/models/xy`)
-- Fallback: front-facing HOME artwork URL in dataset `model`
+- Primary: Project Pokemon HOME model-render URLs (`https://projectpokemon.org/images/sprites-models/sv-sprites-home/{dex4}.png`)
+- Runtime rendering mode: mesh-backed canvas for local `.dae/.fbx/.glb/.gltf` URLs, image-backed overlay for image URLs
 
 ### Schema
 `data/pokemon.schema.json` defines required fields:
@@ -40,12 +40,8 @@ Data is generated from PokeAPI into `src/data/pokemon.sorted.json`. Visual asset
 
 `pnpm models:build` runs `scripts/build-pokemon-models.ts`:
 1. Load `pokemon.sorted.json`.
-2. Pick one representative Pokemon per unique height bucket.
-3. Crawl `https://models.spriters-resource.com/3ds/pokemonxy/` assets.
-4. Match representative dex numbers to downloadable ZIP archives.
-5. Download and extract archives under `public/models/xy/<slug>/`.
-6. Pick a preferred `.dae` (or `.fbx`) model file per slug with base-form priority.
-7. Write `src/data/pokemon.models3d.json` as `{ slug: localModelPath }`.
+2. Build a Project Pokemon model URL from each entry dex number.
+3. Write `src/data/pokemon.models3d.json` as `{ slug: projectPokemonModelUrl }` for all entries.
 
 ### Validation
 `pnpm data:validate` uses Ajv against `data/pokemon.schema.json`.
@@ -73,8 +69,9 @@ The app renders a shared baseline scale viewport (no card-to-card layout):
 - Each Pokemon's rendered pixel height is `heightMeters * pixelsPerMeter`, so relative scale follows dataset heights.
 - The active Pokemon remains centered while neighboring entries are kept visible with extra horizontal spacing to avoid clustering.
 - If `assets.model3dUrl` exists and WebGL is available, the entry renders in an R3F canvas with local model loading.
-- If no local model exists (or WebGL is unavailable), the entry renders a high-resolution image fallback.
-- Local model paths are resolved against Vite `BASE_URL` so GitHub Pages project paths load correctly.
+- If `assets.model3dUrl` points to an image format, the entry renders that image directly in the model overlay slot.
+- If no model overlay URL exists, the entry renders the dataset image fallback.
+- Relative local model paths are resolved against Vite `BASE_URL` so GitHub Pages project paths load correctly.
 
 ## URL Behavior
 - Initial hash is parsed on load to select the entry.

@@ -49,6 +49,8 @@ const EDGE_FRAME_MARGIN_PX = 26
 const ADJACENT_MIN_VISIBLE_FRACTION = 0.16
 const MAX_RENDER_DISTANCE = 2
 const DEFAULT_MUSIC_VOLUME = 0.22
+const THREE_MODEL_FILE_PATTERN = /\.(?:dae|fbx|glb|gltf)(?:\?|$)/i
+const IMAGE_MODEL_FILE_PATTERN = /\.(?:apng|avif|gif|jpe?g|png|svg|webp)(?:\?|$)/i
 
 const LazyPokemonModelCanvas = lazy(async () => {
   const module = await import('./PokemonModelCanvas')
@@ -140,6 +142,14 @@ const canUseWebGl = (): boolean => {
   } catch {
     return false
   }
+}
+
+const isThreeModelUrl = (url: string | undefined): url is string => {
+  return Boolean(url && THREE_MODEL_FILE_PATTERN.test(url))
+}
+
+const isImageModelUrl = (url: string | undefined): url is string => {
+  return Boolean(url && IMAGE_MODEL_FILE_PATTERN.test(url))
 }
 
 export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
@@ -258,8 +268,10 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
     return renderedEntries.find((item) => item.isActive) ?? null
   }, [renderedEntries])
 
-  const activeModelUrl =
-    canRender3dModels && activeEntry?.assets.model3dUrl ? activeEntry.assets.model3dUrl : undefined
+  const activeAssetModelUrl = activeEntry?.assets.model3dUrl
+  const activeThreeModelUrl =
+    canRender3dModels && isThreeModelUrl(activeAssetModelUrl) ? activeAssetModelUrl : undefined
+  const activeImageModelUrl = isImageModelUrl(activeAssetModelUrl) ? activeAssetModelUrl : undefined
   const activeModelHeightPx = activeRenderedEntry?.heightPx ?? 0
   const activeModelWidthPx = activeRenderedEntry
     ? Math.max(activeRenderedEntry.widthPx * 1.55, activeRenderedEntry.heightPx * 0.72, 84)
@@ -737,7 +749,7 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
         >
           <AnimatePresence initial={false}>
             {renderedEntries.map(({ entry, isActive, x, heightPx, opacity, scale, widthPx }) => {
-              const useModelOverlay = Boolean(isActive && activeModelUrl)
+              const useModelOverlay = Boolean(isActive && (activeThreeModelUrl || activeImageModelUrl))
 
               return (
                 <motion.div
@@ -783,7 +795,7 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
             })}
           </AnimatePresence>
 
-          {activeModelUrl && activeEntry && activeRenderedEntry ? (
+          {(activeThreeModelUrl || activeImageModelUrl) && activeEntry && activeRenderedEntry ? (
             <motion.div
               animate={{
                 opacity: activeRenderedEntry.opacity,
@@ -811,20 +823,29 @@ export const ScaleJourneyApp = ({ entries }: ScaleJourneyAppProps) => {
                       src={activeEntry.assets.imageUrl}
                     />
                   }
-                  resetKey={activeModelUrl}
+                  resetKey={activeThreeModelUrl ?? activeImageModelUrl ?? activeEntry.assets.imageUrl}
                 >
-                  <Suspense
-                    fallback={
-                      <img
-                        alt={activeEntry.name}
-                        className="h-full w-auto max-w-none object-contain"
-                        loading="eager"
-                        src={activeEntry.assets.imageUrl}
-                      />
-                    }
-                  >
-                    <LazyPokemonModelCanvas modelUrl={activeModelUrl} />
-                  </Suspense>
+                  {activeThreeModelUrl ? (
+                    <Suspense
+                      fallback={
+                        <img
+                          alt={activeEntry.name}
+                          className="h-full w-auto max-w-none object-contain"
+                          loading="eager"
+                          src={activeEntry.assets.imageUrl}
+                        />
+                      }
+                    >
+                      <LazyPokemonModelCanvas modelUrl={activeThreeModelUrl} />
+                    </Suspense>
+                  ) : (
+                    <img
+                      alt={activeEntry.name}
+                      className="h-full w-auto max-w-none object-contain"
+                      loading="eager"
+                      src={activeImageModelUrl ?? activeEntry.assets.imageUrl}
+                    />
+                  )}
                 </ModelFallbackBoundary>
               </motion.div>
             </motion.div>
